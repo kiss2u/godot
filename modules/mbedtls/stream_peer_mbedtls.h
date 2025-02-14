@@ -31,8 +31,9 @@
 #ifndef STREAM_PEER_MBEDTLS_H
 #define STREAM_PEER_MBEDTLS_H
 
-#include "core/io/stream_peer_tls.h"
 #include "tls_context_mbedtls.h"
+
+#include "core/io/stream_peer_tls.h"
 
 class StreamPeerMbedTLS : public StreamPeerTLS {
 private:
@@ -41,7 +42,7 @@ private:
 
 	Ref<StreamPeer> base;
 
-	static StreamPeerTLS *_create_func();
+	static StreamPeerTLS *_create_func(bool p_notify_postinitialize);
 
 	static int bio_recv(void *ctx, unsigned char *buf, size_t len);
 	static int bio_send(void *ctx, const unsigned char *buf, size_t len);

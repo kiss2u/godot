@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="ScrollContainer" inherits="Container" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="ScrollContainer" inherits="Container" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		A container used to provide scrollbars to a child control when needed.
 	</brief_description>
@@ -40,6 +40,9 @@
 	</methods>
 	<members>
 		<member name="clip_contents" type="bool" setter="set_clip_contents" getter="is_clipping_contents" overrides="Control" default="true" />
+		<member name="draw_focus_border" type="bool" setter="set_draw_focus_border" getter="get_draw_focus_border" default="false">
+			If [code]true[/code], [theme_item focus] is drawn when the ScrollContainer or one of its descendant nodes is focused.
+		</member>
 		<member name="follow_focus" type="bool" setter="set_follow_focus" getter="is_following_focus" default="false">
 			If [code]true[/code], the ScrollContainer will automatically scroll to focused children (including indirect children) to make sure they are fully visible.
 		</member>
@@ -50,7 +53,7 @@
 			Deadzone for touch scrolling. Lower deadzone makes the scrolling more sensitive.
 		</member>
 		<member name="scroll_horizontal" type="int" setter="set_h_scroll" getter="get_h_scroll" default="0">
-			The current horizontal scroll value. 
+			The current horizontal scroll value.
 			[b]Note:[/b] If you are setting this value in the [method Node._ready] function or earlier, it needs to be wrapped with [method Object.set_deferred], since scroll bar's [member Range.max_value] is not initialized yet.
 			[codeblock]
 			func _ready():
@@ -78,12 +81,14 @@
 	<signals>
 		<signal name="scroll_ended">
 			<description>
-				Emitted when scrolling stops.
+				Emitted when scrolling stops when dragging the scrollable area [i]with a touch event[/i]. This signal is [i]not[/i] emitted when scrolling by dragging the scrollbar, scrolling with the mouse wheel or scrolling with keyboard/gamepad events.
+				[b]Note:[/b] This signal is only emitted on Android or iOS, or on desktop/web platforms when [member ProjectSettings.input_devices/pointing/emulate_touch_from_mouse] is enabled.
 			</description>
 		</signal>
 		<signal name="scroll_started">
 			<description>
-				Emitted when scrolling is started.
+				Emitted when scrolling starts when dragging the scrollable area w[i]ith a touch event[/i]. This signal is [i]not[/i] emitted when scrolling by dragging the scrollbar, scrolling with the mouse wheel or scrolling with keyboard/gamepad events.
+				[b]Note:[/b] This signal is only emitted on Android or iOS, or on desktop/web platforms when [member ProjectSettings.input_devices/pointing/emulate_touch_from_mouse] is enabled.
 			</description>
 		</signal>
 	</signals>
@@ -100,8 +105,14 @@
 		<constant name="SCROLL_MODE_SHOW_NEVER" value="3" enum="ScrollMode">
 			Scrolling enabled, scrollbar will be hidden.
 		</constant>
+		<constant name="SCROLL_MODE_RESERVE" value="4" enum="ScrollMode">
+			Combines [constant SCROLL_MODE_AUTO] and [constant SCROLL_MODE_SHOW_ALWAYS]. The scrollbar is only visible if necessary, but the content size is adjusted as if it was always visible. It's useful for ensuring that content size stays the same regardless if the scrollbar is visible.
+		</constant>
 	</constants>
 	<theme_items>
+		<theme_item name="focus" data_type="style" type="StyleBox">
+			The focus border [StyleBox] of the [ScrollContainer]. Only used if [member draw_focus_border] is [code]true[/code].
+		</theme_item>
 		<theme_item name="panel" data_type="style" type="StyleBox">
 			The background [StyleBox] of the [ScrollContainer].
 		</theme_item>

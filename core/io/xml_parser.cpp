@@ -30,11 +30,9 @@
 
 #include "xml_parser.h"
 
-#include "core/string/print_string.h"
+#include "core/io/file_access.h"
 
 //#define DEBUG_XML
-
-VARIANT_ENUM_CAST(XMLParser::NodeType);
 
 static inline bool _is_white_space(char c) {
 	return (c == ' ' || c == '\t' || c == '\n' || c == '\r');
@@ -338,7 +336,7 @@ uint64_t XMLParser::get_node_offset() const {
 }
 
 Error XMLParser::seek(uint64_t p_pos) {
-	ERR_FAIL_COND_V(!data, ERR_FILE_EOF);
+	ERR_FAIL_NULL_V(data, ERR_FILE_EOF);
 	ERR_FAIL_COND_V(p_pos >= length, ERR_FILE_EOF);
 
 	P = data + p_pos;
@@ -431,7 +429,7 @@ String XMLParser::get_named_attribute_value(const String &p_name) const {
 		}
 	}
 
-	ERR_FAIL_COND_V_MSG(idx < 0, "", "Attribute not found: " + p_name + ".");
+	ERR_FAIL_COND_V_MSG(idx < 0, "", vformat("Attribute not found: '%s'.", p_name));
 
 	return attributes[idx].value;
 }
@@ -456,7 +454,7 @@ bool XMLParser::is_empty() const {
 }
 
 Error XMLParser::open_buffer(const Vector<uint8_t> &p_buffer) {
-	ERR_FAIL_COND_V(p_buffer.size() == 0, ERR_INVALID_DATA);
+	ERR_FAIL_COND_V(p_buffer.is_empty(), ERR_INVALID_DATA);
 
 	if (data_copy) {
 		memdelete_arr(data_copy);
@@ -476,7 +474,7 @@ Error XMLParser::open_buffer(const Vector<uint8_t> &p_buffer) {
 
 Error XMLParser::_open_buffer(const uint8_t *p_buffer, size_t p_size) {
 	ERR_FAIL_COND_V(p_size == 0, ERR_INVALID_DATA);
-	ERR_FAIL_COND_V(!p_buffer, ERR_INVALID_DATA);
+	ERR_FAIL_NULL_V(p_buffer, ERR_INVALID_DATA);
 
 	if (data_copy) {
 		memdelete_arr(data_copy);
@@ -495,7 +493,7 @@ Error XMLParser::open(const String &p_path) {
 	Error err;
 	Ref<FileAccess> file = FileAccess::open(p_path, FileAccess::READ, &err);
 
-	ERR_FAIL_COND_V_MSG(err != OK, err, "Cannot open file '" + p_path + "'.");
+	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Cannot open file '%s'.", p_path));
 
 	length = file->get_length();
 	ERR_FAIL_COND_V(length < 1, ERR_FILE_CORRUPT);

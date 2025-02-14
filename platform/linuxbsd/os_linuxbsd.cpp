@@ -34,9 +34,14 @@
 #include "core/io/dir_access.h"
 #include "main/main.h"
 #include "servers/display_server.h"
+#include "servers/rendering_server.h"
 
 #ifdef X11_ENABLED
 #include "x11/display_server_x11.h"
+#endif
+
+#ifdef WAYLAND_ENABLED
+#include "wayland/display_server_wayland.h"
 #endif
 
 #include "modules/modules_enabled.gen.h" // For regex.
@@ -55,6 +60,10 @@
 
 #ifdef HAVE_MNTENT
 #include <mntent.h>
+#endif
+
+#if defined(__FreeBSD__)
+#include <sys/sysctl.h>
 #endif
 
 void OS_LinuxBSD::alert(const String &p_alert, const String &p_title) {
@@ -140,28 +149,69 @@ void OS_LinuxBSD::initialize_joypads() {
 String OS_LinuxBSD::get_unique_id() const {
 	static String machine_id;
 	if (machine_id.is_empty()) {
+#if defined(__FreeBSD__)
+		const int mib[2] = { CTL_KERN, KERN_HOSTUUID };
+		char buf[4096];
+		memset(buf, 0, sizeof(buf));
+		size_t len = sizeof(buf) - 1;
+		if (sysctl(mib, 2, buf, &len, 0x0, 0) != -1) {
+			machine_id = String::utf8(buf).replace("-", "");
+		}
+#else
 		Ref<FileAccess> f = FileAccess::open("/etc/machine-id", FileAccess::READ);
 		if (f.is_valid()) {
 			while (machine_id.is_empty() && !f->eof_reached()) {
 				machine_id = f->get_line().strip_edges();
 			}
 		}
+#endif
 	}
 	return machine_id;
 }
 
 String OS_LinuxBSD::get_processor_name() const {
+#if defined(__FreeBSD__)
+	const int mib[2] = { CTL_HW, HW_MODEL };
+	char buf[4096];
+	memset(buf, 0, sizeof(buf));
+	size_t len = sizeof(buf) - 1;
+	if (sysctl(mib, 2, buf, &len, 0x0, 0) != -1) {
+		return String::utf8(buf);
+	}
+#else
 	Ref<FileAccess> f = FileAccess::open("/proc/cpuinfo", FileAccess::READ);
 	ERR_FAIL_COND_V_MSG(f.is_null(), "", String("Couldn't open `/proc/cpuinfo` to get the CPU model name. Returning an empty string."));
 
 	while (!f->eof_reached()) {
 		const String line = f->get_line();
-		if (line.find("model name") != -1) {
+		if (line.to_lower().contains("model name")) {
 			return line.split(":")[1].strip_edges();
 		}
 	}
+#endif
 
-	ERR_FAIL_V_MSG("", String("Couldn't get the CPU model name from `/proc/cpuinfo`. Returning an empty string."));
+	ERR_FAIL_V_MSG("", String("Couldn't get the CPU model. Returning an empty string."));
+}
+
+bool OS_LinuxBSD::is_sandboxed() const {
+	// This function is derived from SDL:
+	// https://github.com/libsdl-org/SDL/blob/main/src/core/linux/SDL_sandbox.c#L28-L45
+
+	if (access("/.flatpak-info", F_OK) == 0) {
+		return true;
+	}
+
+	// For Snap, we check multiple variables because they might be set for
+	// unrelated reasons. This is the same thing WebKitGTK does.
+	if (has_environment("SNAP") && has_environment("SNAP_NAME") && has_environment("SNAP_REVISION")) {
+		return true;
+	}
+
+	if (access("/run/host/container-manager", F_OK) == 0) {
+		return true;
+	}
+
+	return false;
 }
 
 void OS_LinuxBSD::finalize() {
@@ -219,7 +269,7 @@ String OS_LinuxBSD::get_systemd_os_release_info_value(const String &key) const {
 	if (f.is_valid()) {
 		while (!f->eof_reached()) {
 			const String line = f->get_line();
-			if (line.find(key) != -1) {
+			if (line.contains(key)) {
 				String value = line.split("=")[1].strip_edges();
 				value = value.trim_prefix("\"");
 				return value.trim_suffix("\"");
@@ -295,7 +345,7 @@ Vector<String> OS_LinuxBSD::get_video_adapter_driver_info() const {
 			continue;
 		}
 		String device_class = columns[1].trim_suffix(":");
-		String vendor_device_id_mapping = columns[2];
+		const String &vendor_device_id_mapping = columns[2];
 
 #ifdef MODULE_REGEX_ENABLED
 		if (regex_id_format.search(vendor_device_id_mapping).is_null()) {
@@ -453,7 +503,7 @@ Vector<String> OS_LinuxBSD::lspci_get_device_value(Vector<String> vendor_device_
 	return values;
 }
 
-Error OS_LinuxBSD::shell_open(String p_uri) {
+Error OS_LinuxBSD::shell_open(const String &p_uri) {
 	Error ok;
 	int err_code;
 	List<String> args;
@@ -496,11 +546,19 @@ bool OS_LinuxBSD::_check_internal_feature_support(const String &p_feature) {
 		return font_config_initialized;
 	}
 #endif
+
+#ifndef __linux__
+	// `bsd` includes **all** BSD, not only "other BSD" (see `get_name()`).
+	if (p_feature == "bsd") {
+		return true;
+	}
+#endif
+
 	if (p_feature == "pc") {
 		return true;
 	}
 
-	// Match against the specific OS (linux, freebsd, etc).
+	// Match against the specific OS (`linux`, `freebsd`, `netbsd`, `openbsd`).
 	if (p_feature == get_name().to_lower()) {
 		return true;
 	}
@@ -713,11 +771,11 @@ Vector<String> OS_LinuxBSD::get_system_font_path_for_text(const String &p_font_n
 			FcLangSetAdd(lang_set, reinterpret_cast<const FcChar8 *>(p_locale.utf8().get_data()));
 			FcPatternAddLangSet(pattern, FC_LANG, lang_set);
 
-			FcConfigSubstitute(0, pattern, FcMatchPattern);
+			FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
 			FcDefaultSubstitute(pattern);
 
 			FcResult result;
-			FcPattern *match = FcFontMatch(0, pattern, &result);
+			FcPattern *match = FcFontMatch(nullptr, pattern, &result);
 			if (match) {
 				char *file_name = nullptr;
 				if (FcPatternGetString(match, FC_FILE, 0, reinterpret_cast<FcChar8 **>(&file_name)) == FcResultMatch) {
@@ -758,11 +816,11 @@ String OS_LinuxBSD::get_system_font_path(const String &p_font_name, int p_weight
 			FcPatternAddInteger(pattern, FC_WIDTH, _stretch_to_fc(p_stretch));
 			FcPatternAddInteger(pattern, FC_SLANT, p_italic ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
 
-			FcConfigSubstitute(0, pattern, FcMatchPattern);
+			FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
 			FcDefaultSubstitute(pattern);
 
 			FcResult result;
-			FcPattern *match = FcFontMatch(0, pattern, &result);
+			FcPattern *match = FcFontMatch(nullptr, pattern, &result);
 			if (match) {
 				if (!allow_substitutes) {
 					char *family_name = nullptr;
@@ -946,39 +1004,36 @@ static String get_mountpoint(const String &p_path) {
 }
 
 Error OS_LinuxBSD::move_to_trash(const String &p_path) {
-	String path = p_path.rstrip("/"); // Strip trailing slash when path points to a directory
+	// We try multiple methods, until we find one that works.
+	// So we only return on success until we exhausted possibilities.
 
+	String path = p_path.rstrip("/"); // Strip trailing slash when path points to a directory.
 	int err_code;
 	List<String> args;
 	args.push_back(path);
-	args.push_front("trash"); // The command is `gio trash <file_name>` so we need to add it to args.
+
+	args.push_front("trash"); // The command is `gio trash <file_name>` so we add it before the path.
 	Error result = execute("gio", args, nullptr, &err_code); // For GNOME based machines.
-	if (result == OK && !err_code) {
+	if (result == OK && err_code == 0) { // Success.
 		return OK;
-	} else if (err_code == 2) {
-		return ERR_FILE_NOT_FOUND;
 	}
 
 	args.pop_front();
 	args.push_front("move");
 	args.push_back("trash:/"); // The command is `kioclient5 move <file_name> trash:/`.
 	result = execute("kioclient5", args, nullptr, &err_code); // For KDE based machines.
-	if (result == OK && !err_code) {
+	if (result == OK && err_code == 0) {
 		return OK;
-	} else if (err_code == 2) {
-		return ERR_FILE_NOT_FOUND;
 	}
 
 	args.pop_front();
 	args.pop_back();
 	result = execute("gvfs-trash", args, nullptr, &err_code); // For older Linux machines.
-	if (result == OK && !err_code) {
+	if (result == OK && err_code == 0) {
 		return OK;
-	} else if (err_code == 2) {
-		return ERR_FILE_NOT_FOUND;
 	}
 
-	// If the commands `kioclient5`, `gio` or `gvfs-trash` don't exist on the system we do it manually.
+	// If the commands `kioclient5`, `gio` or `gvfs-trash` don't work on the system we do it manually.
 	String trash_path = "";
 	String mnt = get_mountpoint(path);
 
@@ -1138,6 +1193,10 @@ OS_LinuxBSD::OS_LinuxBSD() {
 
 #ifdef X11_ENABLED
 	DisplayServerX11::register_x11_driver();
+#endif
+
+#ifdef WAYLAND_ENABLED
+	DisplayServerWayland::register_wayland_driver();
 #endif
 
 #ifdef FONTCONFIG_ENABLED

@@ -31,7 +31,7 @@
 #ifndef DEDICATED_SERVER_EXPORT_PLUGIN_H
 #define DEDICATED_SERVER_EXPORT_PLUGIN_H
 
-#include "editor/export/editor_export.h"
+#include "editor/export/editor_export_plugin.h"
 
 class DedicatedServerExportPlugin : public EditorExportPlugin {
 private:
@@ -40,7 +40,7 @@ private:
 	EditorExportPreset::FileExportMode _get_export_mode_for_path(const String &p_path);
 
 protected:
-	String _get_name() const override { return "DedicatedServer"; }
+	String get_name() const override { return "DedicatedServer"; }
 
 	PackedStringArray _get_export_features(const Ref<EditorExportPlatform> &p_platform, bool p_debug) const override;
 	uint64_t _get_customization_configuration_hash() const override;

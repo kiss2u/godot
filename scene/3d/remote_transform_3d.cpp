@@ -34,7 +34,7 @@ void RemoteTransform3D::_update_cache() {
 	cache = ObjectID();
 	if (has_node(remote_node)) {
 		Node *node = get_node(remote_node);
-		if (!node || this == node || node->is_ancestor_of(this) || this->is_ancestor_of(node)) {
+		if (!node || this == node || node->is_ancestor_of(this) || is_ancestor_of(node)) {
 			return;
 		}
 
@@ -113,6 +113,17 @@ void RemoteTransform3D::_notification(int p_what) {
 			_update_cache();
 		} break;
 
+		case NOTIFICATION_RESET_PHYSICS_INTERPOLATION: {
+			if (cache.is_valid()) {
+				_update_remote();
+				Node3D *n = Object::cast_to<Node3D>(ObjectDB::get_instance(cache));
+				if (n) {
+					n->reset_physics_interpolation();
+				}
+			}
+		} break;
+
+		case NOTIFICATION_LOCAL_TRANSFORM_CHANGED:
 		case NOTIFICATION_TRANSFORM_CHANGED: {
 			if (!is_inside_tree()) {
 				break;
@@ -126,6 +137,10 @@ void RemoteTransform3D::_notification(int p_what) {
 }
 
 void RemoteTransform3D::set_remote_node(const NodePath &p_remote_node) {
+	if (remote_node == p_remote_node) {
+		return;
+	}
+
 	remote_node = p_remote_node;
 	if (is_inside_tree()) {
 		_update_cache();
@@ -140,7 +155,15 @@ NodePath RemoteTransform3D::get_remote_node() const {
 }
 
 void RemoteTransform3D::set_use_global_coordinates(const bool p_enable) {
+	if (use_global_coordinates == p_enable) {
+		return;
+	}
+
 	use_global_coordinates = p_enable;
+
+	set_notify_transform(use_global_coordinates);
+	set_notify_local_transform(!use_global_coordinates);
+	_update_remote();
 }
 
 bool RemoteTransform3D::get_use_global_coordinates() const {
@@ -148,6 +171,9 @@ bool RemoteTransform3D::get_use_global_coordinates() const {
 }
 
 void RemoteTransform3D::set_update_position(const bool p_update) {
+	if (update_remote_position == p_update) {
+		return;
+	}
 	update_remote_position = p_update;
 	_update_remote();
 }
@@ -157,6 +183,9 @@ bool RemoteTransform3D::get_update_position() const {
 }
 
 void RemoteTransform3D::set_update_rotation(const bool p_update) {
+	if (update_remote_rotation == p_update) {
+		return;
+	}
 	update_remote_rotation = p_update;
 	_update_remote();
 }
@@ -166,6 +195,9 @@ bool RemoteTransform3D::get_update_rotation() const {
 }
 
 void RemoteTransform3D::set_update_scale(const bool p_update) {
+	if (update_remote_scale == p_update) {
+		return;
+	}
 	update_remote_scale = p_update;
 	_update_remote();
 }
@@ -179,7 +211,7 @@ void RemoteTransform3D::force_update_cache() {
 }
 
 PackedStringArray RemoteTransform3D::get_configuration_warnings() const {
-	PackedStringArray warnings = Node::get_configuration_warnings();
+	PackedStringArray warnings = Node3D::get_configuration_warnings();
 
 	if (!has_node(remote_node) || !Object::cast_to<Node3D>(get_node(remote_node))) {
 		warnings.push_back(RTR("The \"Remote Path\" property must point to a valid Node3D or Node3D-derived node to work."));
@@ -213,5 +245,6 @@ void RemoteTransform3D::_bind_methods() {
 }
 
 RemoteTransform3D::RemoteTransform3D() {
-	set_notify_transform(true);
+	set_notify_transform(use_global_coordinates);
+	set_notify_local_transform(!use_global_coordinates);
 }

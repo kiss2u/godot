@@ -31,7 +31,6 @@
 #ifndef EDITOR_UNDO_REDO_MANAGER_H
 #define EDITOR_UNDO_REDO_MANAGER_H
 
-#include "core/object/class_db.h"
 #include "core/object/object.h"
 #include "core/object/undo_redo.h"
 
@@ -52,6 +51,7 @@ public:
 		double timestamp = 0;
 		String action_name;
 		UndoRedo::MergeMode merge_mode = UndoRedo::MERGE_DISABLE;
+		bool backward_undo_ops = false;
 	};
 
 	struct History {
@@ -66,6 +66,7 @@ private:
 	HashMap<int, History> history_map;
 	Action pending_action;
 
+	bool forced_history = false;
 	bool is_committing = false;
 
 	History *_get_newest_undo();
@@ -78,9 +79,10 @@ public:
 	UndoRedo *get_history_undo_redo(int p_idx) const;
 	int get_history_id_for_object(Object *p_object) const;
 	History &get_history_for_object(Object *p_object);
+	void force_fixed_history();
 
-	void create_action_for_history(const String &p_name, int p_history_id, UndoRedo::MergeMode p_mode = UndoRedo::MERGE_DISABLE);
-	void create_action(const String &p_name = "", UndoRedo::MergeMode p_mode = UndoRedo::MERGE_DISABLE, Object *p_custom_context = nullptr);
+	void create_action_for_history(const String &p_name, int p_history_id, UndoRedo::MergeMode p_mode = UndoRedo::MERGE_DISABLE, bool p_backward_undo_ops = false);
+	void create_action(const String &p_name = "", UndoRedo::MergeMode p_mode = UndoRedo::MERGE_DISABLE, Object *p_custom_context = nullptr, bool p_backward_undo_ops = false);
 
 	void add_do_methodp(Object *p_object, const StringName &p_method, const Variant **p_args, int p_argcount);
 	void add_undo_methodp(Object *p_object, const StringName &p_method, const Variant **p_args, int p_argcount);
@@ -122,13 +124,14 @@ public:
 	bool undo_history(int p_id);
 	bool redo();
 	bool redo_history(int p_id);
-	void clear_history(bool p_increase_version = true, int p_idx = INVALID_HISTORY);
+	void clear_history(int p_idx = INVALID_HISTORY, bool p_increase_version = true);
 
 	void set_history_as_saved(int p_idx);
 	void set_history_as_unsaved(int p_idx);
 	bool is_history_unsaved(int p_idx);
 	bool has_undo();
 	bool has_redo();
+	bool has_history(int p_idx) const;
 
 	String get_current_action_name();
 	int get_current_action_history_id();

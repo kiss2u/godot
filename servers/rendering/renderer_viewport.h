@@ -31,14 +31,15 @@
 #ifndef RENDERER_VIEWPORT_H
 #define RENDERER_VIEWPORT_H
 
-#include "core/templates/local_vector.h"
 #include "core/templates/rid_owner.h"
-#include "core/templates/self_list.h"
 #include "servers/rendering/renderer_scene_render.h"
 #include "servers/rendering/rendering_method.h"
 #include "servers/rendering_server.h"
-#include "servers/xr/xr_interface.h"
 #include "storage/render_scene_buffers.h"
+
+#ifndef _3D_DISABLED
+#include "servers/xr/xr_interface.h"
+#endif // _3D_DISABLED
 
 class RendererViewport {
 public:
@@ -62,7 +63,9 @@ public:
 		float scaling_3d_scale = 1.0;
 		float fsr_sharpness = 0.2f;
 		float texture_mipmap_bias = 0.0f;
+		RS::ViewportAnisotropicFiltering anisotropic_filtering_level = RenderingServer::VIEWPORT_ANISOTROPY_4X;
 		bool fsr_enabled = false;
+		uint32_t jitter_phase_count = 0;
 		RS::ViewportUpdateMode update_mode = RenderingServer::VIEWPORT_UPDATE_WHEN_VISIBLE;
 		RID render_target;
 		RID render_target_texture;
@@ -73,6 +76,7 @@ public:
 		RS::ViewportScreenSpaceAA screen_space_aa = RenderingServer::VIEWPORT_SCREEN_SPACE_AA_DISABLED;
 		bool use_taa = false;
 		bool use_debanding = false;
+		bool force_motion_vectors = false;
 
 		RendererSceneRender::CameraData prev_camera_data;
 		uint64_t prev_camera_data_frame = 0;
@@ -116,6 +120,7 @@ public:
 		RS::CanvasItemTextureRepeat texture_repeat = RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED;
 
 		bool transparent_bg = false;
+		bool use_hdr_2d = false;
 
 		uint32_t canvas_cull_mask = 0xffffffff;
 
@@ -157,6 +162,7 @@ public:
 			update_mode = RS::VIEWPORT_UPDATE_WHEN_VISIBLE;
 			clear_mode = RS::VIEWPORT_CLEAR_ALWAYS;
 			transparent_bg = false;
+			use_hdr_2d = false;
 
 			viewport_to_screen = DisplayServer::INVALID_WINDOW_ID;
 			shadow_atlas_size = 0;
@@ -196,9 +202,12 @@ public:
 	int total_vertices_drawn = 0;
 	int total_draw_calls_used = 0;
 
+	int num_viewports_with_motion_vectors = 0;
+
 private:
 	Vector<Viewport *> _sort_active_viewports();
 	void _viewport_set_size(Viewport *p_viewport, int p_width, int p_height, uint32_t p_view_count);
+	bool _viewport_requires_motion_vectors(Viewport *p_viewport);
 	void _configure_3d_render_buffers(Viewport *p_viewport);
 	void _draw_3d(Viewport *p_viewport);
 	void _draw_viewport(Viewport *p_viewport);
@@ -225,8 +234,10 @@ public:
 	void viewport_set_scaling_3d_scale(RID p_viewport, float p_scaling_3d_scale);
 	void viewport_set_fsr_sharpness(RID p_viewport, float p_sharpness);
 	void viewport_set_texture_mipmap_bias(RID p_viewport, float p_mipmap_bias);
+	void viewport_set_anisotropic_filtering_level(RID p_viewport, RS::ViewportAnisotropicFiltering p_anisotropic_filtering_level);
 
 	void viewport_set_update_mode(RID p_viewport, RS::ViewportUpdateMode p_mode);
+	RS::ViewportUpdateMode viewport_get_update_mode(RID p_viewport) const;
 	void viewport_set_vflip(RID p_viewport, bool p_enable);
 
 	void viewport_set_clear_mode(RID p_viewport, RS::ViewportClearMode p_clear_mode);
@@ -250,6 +261,9 @@ public:
 	void viewport_remove_canvas(RID p_viewport, RID p_canvas);
 	void viewport_set_canvas_transform(RID p_viewport, RID p_canvas, const Transform2D &p_offset);
 	void viewport_set_transparent_background(RID p_viewport, bool p_enabled);
+	void viewport_set_use_hdr_2d(RID p_viewport, bool p_use_hdr_2d);
+
+	bool viewport_is_using_hdr_2d(RID p_viewport) const;
 
 	void viewport_set_global_canvas_transform(RID p_viewport, const Transform2D &p_transform);
 	void viewport_set_canvas_stacking(RID p_viewport, RID p_canvas, int p_layer, int p_sublayer);
@@ -264,6 +278,7 @@ public:
 	void viewport_set_screen_space_aa(RID p_viewport, RS::ViewportScreenSpaceAA p_mode);
 	void viewport_set_use_taa(RID p_viewport, bool p_use_taa);
 	void viewport_set_use_debanding(RID p_viewport, bool p_use_debanding);
+	void viewport_set_force_motion_vectors(RID p_viewport, bool p_force_motion_vectors);
 	void viewport_set_use_occlusion_culling(RID p_viewport, bool p_use_occlusion_culling);
 	void viewport_set_occlusion_rays_per_thread(int p_rays_per_thread);
 	void viewport_set_occlusion_culling_build_quality(RS::ViewportOcclusionCullingBuildQuality p_quality);
@@ -287,18 +302,19 @@ public:
 	virtual RID viewport_find_from_screen_attachment(DisplayServer::WindowID p_id = DisplayServer::MAIN_WINDOW_ID) const;
 
 	void viewport_set_vrs_mode(RID p_viewport, RS::ViewportVRSMode p_mode);
+	void viewport_set_vrs_update_mode(RID p_viewport, RS::ViewportVRSUpdateMode p_mode);
 	void viewport_set_vrs_texture(RID p_viewport, RID p_texture);
 
 	void handle_timestamp(String p_timestamp, uint64_t p_cpu_time, uint64_t p_gpu_time);
 
-	void set_default_clear_color(const Color &p_color);
-	void draw_viewports();
+	void draw_viewports(bool p_swap_buffers);
 
 	bool free(RID p_rid);
 
 	int get_total_objects_drawn() const;
-	int get_total_vertices_drawn() const;
+	int get_total_primitives_drawn() const;
 	int get_total_draw_calls_used() const;
+	int get_num_viewports_with_motion_vectors() const;
 
 	// Workaround for setting this on thread.
 	void call_set_vsync_mode(DisplayServer::VSyncMode p_mode, DisplayServer::WindowID p_window);

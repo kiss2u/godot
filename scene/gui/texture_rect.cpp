@@ -30,9 +30,6 @@
 
 #include "texture_rect.h"
 
-#include "core/core_string_names.h"
-#include "servers/rendering_server.h"
-
 void TextureRect::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_DRAW: {
@@ -92,15 +89,6 @@ void TextureRect::_notification(int p_what) {
 				} break;
 			}
 
-			Ref<AtlasTexture> p_atlas = texture;
-
-			if (p_atlas.is_valid() && !region.has_area()) {
-				Size2 scale_size(size.width / texture->get_width(), size.height / texture->get_height());
-
-				offset.width += hflip ? p_atlas->get_margin().get_position().width * scale_size.width * 2 : 0;
-				offset.height += vflip ? p_atlas->get_margin().get_position().height * scale_size.height * 2 : 0;
-			}
-
 			size.width *= hflip ? -1.0f : 1.0f;
 			size.height *= vflip ? -1.0f : 1.0f;
 
@@ -117,7 +105,7 @@ void TextureRect::_notification(int p_what) {
 }
 
 Size2 TextureRect::get_minimum_size() const {
-	if (!texture.is_null()) {
+	if (texture.is_valid()) {
 		switch (expand_mode) {
 			case EXPAND_KEEP_SIZE: {
 				return texture->get_size();
@@ -189,10 +177,8 @@ bool TextureRect::_set(const StringName &p_name, const Variant &p_value) {
 #endif
 
 void TextureRect::_texture_changed() {
-	if (texture.is_valid()) {
-		queue_redraw();
-		update_minimum_size();
-	}
+	queue_redraw();
+	update_minimum_size();
 }
 
 void TextureRect::set_texture(const Ref<Texture2D> &p_tex) {
@@ -201,13 +187,13 @@ void TextureRect::set_texture(const Ref<Texture2D> &p_tex) {
 	}
 
 	if (texture.is_valid()) {
-		texture->disconnect(CoreStringNames::get_singleton()->changed, callable_mp(this, &TextureRect::_texture_changed));
+		texture->disconnect_changed(callable_mp(this, &TextureRect::_texture_changed));
 	}
 
 	texture = p_tex;
 
 	if (texture.is_valid()) {
-		texture->connect(CoreStringNames::get_singleton()->changed, callable_mp(this, &TextureRect::_texture_changed));
+		texture->connect_changed(callable_mp(this, &TextureRect::_texture_changed));
 	}
 
 	queue_redraw();

@@ -31,6 +31,7 @@
 #ifndef DEBUGGER_MARSHALLS_H
 #define DEBUGGER_MARSHALLS_H
 
+#include "core/input/shortcut.h"
 #include "core/object/script_language.h"
 
 struct DebuggerMarshalls {
@@ -38,6 +39,7 @@ struct DebuggerMarshalls {
 		String name;
 		Variant value;
 		int type = -1;
+		int var_type = -1;
 
 		Array serialize(int max_size = 1 << 20); // 1 MiB default.
 		bool deserialize(const Array &p_arr);
@@ -67,6 +69,9 @@ struct DebuggerMarshalls {
 		Array serialize();
 		bool deserialize(const Array &p_arr);
 	};
+
+	static Array serialize_key_shortcut(const Ref<Shortcut> &p_shortcut);
+	static Ref<Shortcut> deserialize_key_shortcut(const Array &p_keys);
 };
 
 #endif // DEBUGGER_MARSHALLS_H

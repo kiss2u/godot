@@ -31,6 +31,7 @@
 #include "code_completion.h"
 
 #include "core/config/project_settings.h"
+#include "core/object/script_language.h"
 #include "editor/editor_file_system.h"
 #include "editor/editor_settings.h"
 #include "scene/gui/control.h"
@@ -115,7 +116,7 @@ PackedStringArray get_code_completion(CompletionKind p_kind, const String &p_scr
 					continue;
 				}
 
-				String name = prop.name.substr(prop.name.find("/") + 1, prop.name.length());
+				String name = prop.name.substr(prop.name.find_char('/') + 1, prop.name.length());
 				suggestions.push_back(quoted(name));
 			}
 		} break;

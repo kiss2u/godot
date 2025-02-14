@@ -31,11 +31,10 @@
 #ifndef PHYSICS_SERVER_3D_H
 #define PHYSICS_SERVER_3D_H
 
+#ifndef _3D_DISABLED
+
 #include "core/io/resource.h"
-#include "core/object/class_db.h"
 #include "core/object/gdvirtual.gen.inc"
-#include "core/object/script_language.h"
-#include "core/variant/native_ptr.h"
 
 class PhysicsDirectSpaceState3D;
 template <typename T>
@@ -155,6 +154,7 @@ public:
 		ObjectID collider_id;
 		Object *collider = nullptr;
 		int shape = 0;
+		int face_index = -1;
 	};
 
 	virtual bool intersect_ray(const RayParameters &p_parameters, RayResult &r_result) = 0;
@@ -211,15 +211,15 @@ public:
 class PhysicsServer3DRenderingServerHandler : public Object {
 	GDCLASS(PhysicsServer3DRenderingServerHandler, Object)
 protected:
-	GDVIRTUAL2(_set_vertex, int, GDExtensionConstPtr<void>)
-	GDVIRTUAL2(_set_normal, int, GDExtensionConstPtr<void>)
-	GDVIRTUAL1(_set_aabb, const AABB &)
+	GDVIRTUAL2_REQUIRED(_set_vertex, int, const Vector3 &)
+	GDVIRTUAL2_REQUIRED(_set_normal, int, const Vector3 &)
+	GDVIRTUAL1_REQUIRED(_set_aabb, const AABB &)
 
 	static void _bind_methods();
 
 public:
-	virtual void set_vertex(int p_vertex_id, const void *p_vector3);
-	virtual void set_normal(int p_vertex_id, const void *p_vector3);
+	virtual void set_vertex(int p_vertex_id, const Vector3 &p_vertex);
+	virtual void set_normal(int p_vertex_id, const Vector3 &p_normal);
 	virtual void set_aabb(const AABB &p_aabb);
 
 	virtual ~PhysicsServer3DRenderingServerHandler() {}
@@ -687,7 +687,7 @@ public:
 	virtual void hinge_joint_set_param(RID p_joint, HingeJointParam p_param, real_t p_value) = 0;
 	virtual real_t hinge_joint_get_param(RID p_joint, HingeJointParam p_param) const = 0;
 
-	virtual void hinge_joint_set_flag(RID p_joint, HingeJointFlag p_flag, bool p_value) = 0;
+	virtual void hinge_joint_set_flag(RID p_joint, HingeJointFlag p_flag, bool p_enabled) = 0;
 	virtual bool hinge_joint_get_flag(RID p_joint, HingeJointFlag p_flag) const = 0;
 
 	enum SliderJointParam {
@@ -964,7 +964,7 @@ protected:
 	static void _bind_methods();
 
 public:
-	PhysicsServer3D::MotionResult *get_result_ptr() const { return const_cast<PhysicsServer3D::MotionResult *>(&result); }
+	PhysicsServer3D::MotionResult *get_result_ptr() { return &result; }
 
 	Vector3 get_travel() const;
 	Vector3 get_remainder() const;
@@ -1054,5 +1054,7 @@ VARIANT_ENUM_CAST(PhysicsServer3D::G6DOFJointAxisParam);
 VARIANT_ENUM_CAST(PhysicsServer3D::G6DOFJointAxisFlag);
 VARIANT_ENUM_CAST(PhysicsServer3D::AreaBodyStatus);
 VARIANT_ENUM_CAST(PhysicsServer3D::ProcessInfo);
+
+#endif // _3D_DISABLED
 
 #endif // PHYSICS_SERVER_3D_H

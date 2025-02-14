@@ -29,62 +29,91 @@
 /**************************************************************************/
 
 #include "register_types.h"
-#include "core/config/project_settings.h"
-#include "main/main.h"
-
-#include "openxr_interface.h"
 
 #include "action_map/openxr_action.h"
 #include "action_map/openxr_action_map.h"
 #include "action_map/openxr_action_set.h"
+#include "action_map/openxr_haptic_feedback.h"
 #include "action_map/openxr_interaction_profile.h"
-#include "action_map/openxr_interaction_profile_meta_data.h"
+#include "action_map/openxr_interaction_profile_metadata.h"
+#include "openxr_interface.h"
 
+#include "extensions/openxr_extension_wrapper_extension.h"
+
+#include "scene/openxr_composition_layer.h"
+#include "scene/openxr_composition_layer_cylinder.h"
+#include "scene/openxr_composition_layer_equirect.h"
+#include "scene/openxr_composition_layer_quad.h"
 #include "scene/openxr_hand.h"
-
-#ifdef ANDROID_ENABLED
-#include "extensions/openxr_android_extension.h"
-#endif
+#include "scene/openxr_visibility_mask.h"
 
 #include "extensions/openxr_composition_layer_depth_extension.h"
+#include "extensions/openxr_composition_layer_extension.h"
+#include "extensions/openxr_debug_utils_extension.h"
+#include "extensions/openxr_dpad_binding_extension.h"
+#include "extensions/openxr_eye_gaze_interaction.h"
 #include "extensions/openxr_fb_display_refresh_rate_extension.h"
-#include "extensions/openxr_fb_passthrough_extension_wrapper.h"
+#include "extensions/openxr_hand_interaction_extension.h"
 #include "extensions/openxr_hand_tracking_extension.h"
 #include "extensions/openxr_htc_controller_extension.h"
 #include "extensions/openxr_htc_vive_tracker_extension.h"
 #include "extensions/openxr_huawei_controller_extension.h"
+#include "extensions/openxr_local_floor_extension.h"
+#include "extensions/openxr_meta_controller_extension.h"
 #include "extensions/openxr_ml2_controller_extension.h"
+#include "extensions/openxr_mxink_extension.h"
 #include "extensions/openxr_palm_pose_extension.h"
 #include "extensions/openxr_pico_controller_extension.h"
+#include "extensions/openxr_valve_analog_threshold_extension.h"
+#include "extensions/openxr_visibility_mask_extension.h"
 #include "extensions/openxr_wmr_controller_extension.h"
 
+#ifdef TOOLS_ENABLED
+#include "editor/openxr_editor_plugin.h"
+#endif
+
+#ifdef ANDROID_ENABLED
+#include "extensions/platform/openxr_android_extension.h"
+#endif
+
+#include "core/config/project_settings.h"
+#include "main/main.h"
+
+#ifdef TOOLS_ENABLED
+#include "editor/editor_node.h"
+
+#include "editor/openxr_binding_modifier_editor.h"
+#include "editor/openxr_interaction_profile_editor.h"
+
+#endif
+
 static OpenXRAPI *openxr_api = nullptr;
-static OpenXRInteractionProfileMetaData *openxr_interaction_profile_meta_data = nullptr;
+static OpenXRInteractionProfileMetadata *openxr_interaction_profile_metadata = nullptr;
 static Ref<OpenXRInterface> openxr_interface;
 
 #ifdef TOOLS_ENABLED
-
-#include "editor/editor_node.h"
-#include "editor/openxr_editor_plugin.h"
-
 static void _editor_init() {
 	if (OpenXRAPI::openxr_is_enabled(false)) {
 		// Only add our OpenXR action map editor if OpenXR is enabled for our project
 
-		if (openxr_interaction_profile_meta_data == nullptr) {
-			// If we didn't initialize our actionmap meta data at startup, we initialize it now.
-			openxr_interaction_profile_meta_data = memnew(OpenXRInteractionProfileMetaData);
-			ERR_FAIL_NULL(openxr_interaction_profile_meta_data);
+		if (openxr_interaction_profile_metadata == nullptr) {
+			// If we didn't initialize our actionmap metadata at startup, we initialize it now.
+			openxr_interaction_profile_metadata = memnew(OpenXRInteractionProfileMetadata);
+			ERR_FAIL_NULL(openxr_interaction_profile_metadata);
 		}
 
 		OpenXREditorPlugin *openxr_plugin = memnew(OpenXREditorPlugin());
 		EditorNode::get_singleton()->add_editor_plugin(openxr_plugin);
 	}
 }
-
 #endif
 
 void initialize_openxr_module(ModuleInitializationLevel p_level) {
+	if (p_level == MODULE_INITIALIZATION_LEVEL_CORE) {
+		GDREGISTER_CLASS(OpenXRExtensionWrapperExtension);
+		GDREGISTER_CLASS(OpenXRAPIExtension);
+	}
+
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SERVERS) {
 		if (OpenXRAPI::openxr_is_enabled(false)) {
 			// Always register our extension wrappers even if we don't initialize OpenXR.
@@ -95,21 +124,42 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 
 			// register our other extensions
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRPalmPoseExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXRLocalFloorExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRPicoControllerExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRCompositionLayerDepthExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXRCompositionLayerExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRHTCControllerExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRHTCViveTrackerExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRHuaweiControllerExtension));
-			OpenXRAPI::register_extension_wrapper(memnew(OpenXRHandTrackingExtension));
-			OpenXRAPI::register_extension_wrapper(memnew(OpenXRFbPassthroughExtensionWrapper));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRDisplayRefreshRateExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRWMRControllerExtension));
 			OpenXRAPI::register_extension_wrapper(memnew(OpenXRML2ControllerExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXRMetaControllerExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXREyeGazeInteractionExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXRHandInteractionExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXRMxInkExtension));
+			OpenXRAPI::register_extension_wrapper(memnew(OpenXRVisibilityMaskExtension));
+
+			// register gated extensions
+			if (int(GLOBAL_GET("xr/openxr/extensions/debug_utils")) > 0) {
+				OpenXRAPI::register_extension_wrapper(memnew(OpenXRDebugUtilsExtension));
+			}
+			if (GLOBAL_GET("xr/openxr/extensions/hand_tracking")) {
+				OpenXRAPI::register_extension_wrapper(memnew(OpenXRHandTrackingExtension));
+			}
+
+			// register gated binding modifiers
+			if (GLOBAL_GET("xr/openxr/binding_modifiers/analog_threshold")) {
+				OpenXRAPI::register_extension_wrapper(memnew(OpenXRValveAnalogThresholdExtension));
+			}
+			if (GLOBAL_GET("xr/openxr/binding_modifiers/dpad_binding")) {
+				OpenXRAPI::register_extension_wrapper(memnew(OpenXRDPadBindingExtension));
+			}
 		}
 
 		if (OpenXRAPI::openxr_is_enabled()) {
-			openxr_interaction_profile_meta_data = memnew(OpenXRInteractionProfileMetaData);
-			ERR_FAIL_NULL(openxr_interaction_profile_meta_data);
+			openxr_interaction_profile_metadata = memnew(OpenXRInteractionProfileMetadata);
+			ERR_FAIL_NULL(openxr_interaction_profile_metadata);
 			openxr_api = memnew(OpenXRAPI);
 			ERR_FAIL_NULL(openxr_api);
 
@@ -117,7 +167,9 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 				const char *init_error_message =
 						"OpenXR was requested but failed to start.\n"
 						"Please check if your HMD is connected.\n"
-						"When using Windows MR please note that WMR only has DirectX support, make sure SteamVR is your default OpenXR runtime.\n"
+#ifdef WINDOWS_ENABLED
+						"When using Windows Mixed Reality, note that WMR only has DirectX support. Make sure SteamVR is your default OpenXR runtime.\n"
+#endif
 						"Godot will start in normal mode.\n";
 
 				WARN_PRINT(init_error_message);
@@ -140,11 +192,27 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(OpenXRAction);
 		GDREGISTER_CLASS(OpenXRActionSet);
 		GDREGISTER_CLASS(OpenXRActionMap);
-		GDREGISTER_CLASS(OpenXRInteractionProfileMetaData);
+		GDREGISTER_CLASS(OpenXRInteractionProfileMetadata);
 		GDREGISTER_CLASS(OpenXRIPBinding);
 		GDREGISTER_CLASS(OpenXRInteractionProfile);
 
+		GDREGISTER_ABSTRACT_CLASS(OpenXRBindingModifier);
+		GDREGISTER_VIRTUAL_CLASS(OpenXRIPBindingModifier);
+		GDREGISTER_VIRTUAL_CLASS(OpenXRActionBindingModifier);
+		GDREGISTER_CLASS(OpenXRAnalogThresholdModifier);
+		GDREGISTER_CLASS(OpenXRDpadBindingModifier);
+
+		GDREGISTER_ABSTRACT_CLASS(OpenXRHapticBase);
+		GDREGISTER_CLASS(OpenXRHapticVibration);
+
+		GDREGISTER_ABSTRACT_CLASS(OpenXRCompositionLayer);
+		GDREGISTER_CLASS(OpenXRCompositionLayerEquirect);
+		GDREGISTER_CLASS(OpenXRCompositionLayerCylinder);
+		GDREGISTER_CLASS(OpenXRCompositionLayerQuad);
+
 		GDREGISTER_CLASS(OpenXRHand);
+
+		GDREGISTER_CLASS(OpenXRVisibilityMask);
 
 		XRServer *xr_server = XRServer::get_singleton();
 		if (xr_server) {
@@ -157,6 +225,10 @@ void initialize_openxr_module(ModuleInitializationLevel p_level) {
 		}
 
 #ifdef TOOLS_ENABLED
+		GDREGISTER_ABSTRACT_CLASS(OpenXRInteractionProfileEditorBase);
+		GDREGISTER_CLASS(OpenXRInteractionProfileEditor);
+		GDREGISTER_CLASS(OpenXRBindingModifierEditor);
+
 		EditorNode::add_init_callback(_editor_init);
 #endif
 	}
@@ -193,9 +265,9 @@ void uninitialize_openxr_module(ModuleInitializationLevel p_level) {
 		openxr_api = nullptr;
 	}
 
-	if (openxr_interaction_profile_meta_data) {
-		memdelete(openxr_interaction_profile_meta_data);
-		openxr_interaction_profile_meta_data = nullptr;
+	if (openxr_interaction_profile_metadata) {
+		memdelete(openxr_interaction_profile_metadata);
+		openxr_interaction_profile_metadata = nullptr;
 	}
 
 	// cleanup our extension wrappers

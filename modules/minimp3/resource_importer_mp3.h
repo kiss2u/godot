@@ -32,6 +32,7 @@
 #define RESOURCE_IMPORTER_MP3_H
 
 #include "audio_stream_mp3.h"
+
 #include "core/io/resource_importer.h"
 
 class ResourceImporterMP3 : public ResourceImporter {
@@ -54,9 +55,10 @@ public:
 	virtual bool has_advanced_options() const override;
 	virtual void show_advanced_options(const String &p_path) override;
 #endif
-	static Ref<AudioStreamMP3> import_mp3(const String &p_path);
 
-	virtual Error import(const String &p_source_file, const String &p_save_path, const HashMap<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files = nullptr, Variant *r_metadata = nullptr) override;
+	virtual Error import(ResourceUID::ID p_source_id, const String &p_source_file, const String &p_save_path, const HashMap<StringName, Variant> &p_options, List<String> *r_platform_variants, List<String> *r_gen_files = nullptr, Variant *r_metadata = nullptr) override;
+
+	virtual bool can_import_threaded() const override { return true; }
 
 	ResourceImporterMP3();
 };

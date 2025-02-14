@@ -153,7 +153,7 @@ public:
 	bool is_flushing() const;
 	int get_max_buffer_usage() const;
 
-	CallQueue(Allocator *p_custom_allocator = 0, uint32_t p_max_pages = 8192, const String &p_error_text = String());
+	CallQueue(Allocator *p_custom_allocator = nullptr, uint32_t p_max_pages = 8192, const String &p_error_text = String());
 	virtual ~CallQueue();
 };
 
@@ -164,6 +164,7 @@ class MessageQueue : public CallQueue {
 
 public:
 	_FORCE_INLINE_ static CallQueue *get_singleton() { return thread_singleton ? thread_singleton : main_singleton; }
+	_FORCE_INLINE_ static CallQueue *get_main_singleton() { return main_singleton; }
 
 	static void set_thread_singleton_override(CallQueue *p_thread_singleton);
 

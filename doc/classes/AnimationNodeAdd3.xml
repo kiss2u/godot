@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="AnimationNodeAdd3" inherits="AnimationNodeSync" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="AnimationNodeAdd3" inherits="AnimationNodeSync" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Blends two of three animations additively inside of an [AnimationNodeBlendTree].
 	</brief_description>
 	<description>
-		A resource to add to an [AnimationNodeBlendTree]. Blends two animations out of three additively out of three based on the amounmt value.
+		A resource to add to an [AnimationNodeBlendTree]. Blends two animations out of three additively out of three based on the amount value.
 		This animation node has three inputs:
 		- The base animation to add to
 		- A "-add" animation to blend with when the blend amount is negative
@@ -13,6 +13,6 @@
 	</description>
 	<tutorials>
 		<link title="Using AnimationTree">$DOCS_URL/tutorials/animation/animation_tree.html</link>
-		<link title="Third Person Shooter Demo">https://godotengine.org/asset-library/asset/678</link>
+		<link title="Third Person Shooter (TPS) Demo">https://godotengine.org/asset-library/asset/2710</link>
 	</tutorials>
 </class>

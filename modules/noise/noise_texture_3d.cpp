@@ -30,7 +30,6 @@
 
 #include "noise_texture_3d.h"
 
-#include "core/core_string_names.h"
 #include "noise.h"
 
 NoiseTexture3D::NoiseTexture3D() {
@@ -50,10 +49,6 @@ NoiseTexture3D::~NoiseTexture3D() {
 }
 
 void NoiseTexture3D::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("_update_texture"), &NoiseTexture3D::_update_texture);
-	ClassDB::bind_method(D_METHOD("_generate_texture"), &NoiseTexture3D::_generate_texture);
-	ClassDB::bind_method(D_METHOD("_thread_done", "image"), &NoiseTexture3D::_thread_done);
-
 	ClassDB::bind_method(D_METHOD("set_width", "width"), &NoiseTexture3D::set_width);
 	ClassDB::bind_method(D_METHOD("set_height", "height"), &NoiseTexture3D::set_height);
 	ClassDB::bind_method(D_METHOD("set_depth", "depth"), &NoiseTexture3D::set_depth);
@@ -111,6 +106,7 @@ void NoiseTexture3D::_set_texture_data(const TypedArray<Image> &p_data) {
 		} else {
 			texture = RS::get_singleton()->texture_3d_create(data[0]->get_format(), data[0]->get_width(), data[0]->get_height(), data.size(), false, data);
 		}
+		format = data[0]->get_format();
 	}
 	emit_changed();
 }
@@ -126,7 +122,7 @@ void NoiseTexture3D::_thread_done(const TypedArray<Image> &p_data) {
 
 void NoiseTexture3D::_thread_function(void *p_ud) {
 	NoiseTexture3D *tex = static_cast<NoiseTexture3D *>(p_ud);
-	tex->call_deferred(SNAME("_thread_done"), tex->_generate_texture());
+	callable_mp(tex, &NoiseTexture3D::_thread_done).call_deferred(tex->_generate_texture());
 }
 
 void NoiseTexture3D::_queue_update() {
@@ -135,7 +131,7 @@ void NoiseTexture3D::_queue_update() {
 	}
 
 	update_queued = true;
-	call_deferred(SNAME("_update_texture"));
+	callable_mp(this, &NoiseTexture3D::_update_texture).call_deferred();
 }
 
 TypedArray<Image> NoiseTexture3D::_generate_texture() {
@@ -145,6 +141,8 @@ TypedArray<Image> NoiseTexture3D::_generate_texture() {
 	if (ref_noise.is_null()) {
 		return TypedArray<Image>();
 	}
+
+	ERR_FAIL_COND_V_MSG((int64_t)width * height * depth > Image::MAX_PIXELS, TypedArray<Image>(), "The NoiseTexture3D is too big, consider lowering its width, height, or depth.");
 
 	Vector<Ref<Image>> images;
 
@@ -189,6 +187,9 @@ Ref<Image> NoiseTexture3D::_modulate_with_gradient(Ref<Image> p_image, Ref<Gradi
 
 void NoiseTexture3D::_update_texture() {
 	bool use_thread = true;
+#ifndef THREADS_ENABLED
+	use_thread = false;
+#endif
 	if (first_time) {
 		use_thread = false;
 		first_time = false;
@@ -213,11 +214,11 @@ void NoiseTexture3D::set_noise(Ref<Noise> p_noise) {
 		return;
 	}
 	if (noise.is_valid()) {
-		noise->disconnect(CoreStringNames::get_singleton()->changed, callable_mp(this, &NoiseTexture3D::_queue_update));
+		noise->disconnect_changed(callable_mp(this, &NoiseTexture3D::_queue_update));
 	}
 	noise = p_noise;
 	if (noise.is_valid()) {
-		noise->connect(CoreStringNames::get_singleton()->changed, callable_mp(this, &NoiseTexture3D::_queue_update));
+		noise->connect_changed(callable_mp(this, &NoiseTexture3D::_queue_update));
 	}
 	_queue_update();
 }
@@ -296,11 +297,11 @@ void NoiseTexture3D::set_color_ramp(const Ref<Gradient> &p_gradient) {
 		return;
 	}
 	if (color_ramp.is_valid()) {
-		color_ramp->disconnect(CoreStringNames::get_singleton()->changed, callable_mp(this, &NoiseTexture3D::_queue_update));
+		color_ramp->disconnect_changed(callable_mp(this, &NoiseTexture3D::_queue_update));
 	}
 	color_ramp = p_gradient;
 	if (color_ramp.is_valid()) {
-		color_ramp->connect(CoreStringNames::get_singleton()->changed, callable_mp(this, &NoiseTexture3D::_queue_update));
+		color_ramp->connect_changed(callable_mp(this, &NoiseTexture3D::_queue_update));
 	}
 	_queue_update();
 }
@@ -333,6 +334,10 @@ int NoiseTexture3D::get_depth() const {
 	return depth;
 }
 
+bool NoiseTexture3D::has_mipmaps() const {
+	return false;
+}
+
 RID NoiseTexture3D::get_rid() const {
 	if (!texture.is_valid()) {
 		texture = RS::get_singleton()->texture_3d_placeholder_create();
@@ -347,6 +352,5 @@ Vector<Ref<Image>> NoiseTexture3D::get_data() const {
 }
 
 Image::Format NoiseTexture3D::get_format() const {
-	ERR_FAIL_COND_V(!texture.is_valid(), Image::FORMAT_L8);
-	return RS::get_singleton()->texture_3d_get(texture)[0]->get_format();
+	return format;
 }

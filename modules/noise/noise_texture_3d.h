@@ -60,6 +60,8 @@ private:
 	Ref<Gradient> color_ramp;
 	Ref<Noise> noise;
 
+	Image::Format format = Image::FORMAT_L8;
+
 	void _thread_done(const TypedArray<Image> &p_data);
 	static void _thread_function(void *p_ud);
 
@@ -100,6 +102,8 @@ public:
 	virtual int get_width() const override;
 	virtual int get_height() const override;
 	virtual int get_depth() const override;
+
+	virtual bool has_mipmaps() const override;
 
 	virtual RID get_rid() const override;
 

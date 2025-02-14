@@ -47,20 +47,6 @@ TAA::~TAA() {
 	taa_shader.version_free(shader_version);
 }
 
-void TAA::msaa_resolve(Ref<RenderSceneBuffersRD> p_render_buffers) {
-	if (!p_render_buffers->has_velocity_buffer(true)) {
-		// nothing to resolve
-		return;
-	}
-
-	for (uint32_t v = 0; v < p_render_buffers->get_view_count(); v++) {
-		RID velocity_buffer_msaa = p_render_buffers->get_velocity_buffer(true, v);
-		RID velocity_buffer = p_render_buffers->get_velocity_buffer(false, v);
-
-		RD::get_singleton()->texture_resolve_multisample(velocity_buffer_msaa, velocity_buffer);
-	}
-}
-
 void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_prev_velocity, RID p_history, Size2 p_resolution, float p_z_near, float p_z_far) {
 	UniformSetCacheRD *uniform_set_cache = UniformSetCacheRD::get_singleton();
 	ERR_FAIL_NULL(uniform_set_cache);
@@ -76,8 +62,8 @@ void TAA::resolve(RID p_frame, RID p_temp, RID p_depth, RID p_velocity, RID p_pr
 	memset(&push_constant, 0, sizeof(TAAResolvePushConstant));
 	push_constant.resolution_width = p_resolution.width;
 	push_constant.resolution_height = p_resolution.height;
-	push_constant.disocclusion_threshold = 0.025f;
-	push_constant.disocclusion_scale = 10.0f;
+	push_constant.disocclusion_threshold = 2.5f; // If velocity changes by less than this amount of texels we can retain the accumulation buffer.
+	push_constant.disocclusion_scale = 0.01f; // Scale the weight of this pixel calculated as (change in velocity - threshold) * scale.
 
 	RD::ComputeListID compute_list = RD::get_singleton()->compute_list_begin();
 	RD::get_singleton()->compute_list_bind_compute_pipeline(compute_list, pipeline);

@@ -31,6 +31,7 @@
 #ifndef CODE_EDIT_H
 #define CODE_EDIT_H
 
+#include "core/object/script_language.h"
 #include "scene/gui/text_edit.h"
 
 class CodeEdit : public TextEdit {
@@ -112,6 +113,9 @@ private:
 	int line_number_gutter = -1;
 	int line_number_digits = 1;
 	String line_number_padding = " ";
+	HashMap<int, RID> line_number_text_cache;
+	void _clear_line_number_text_cache();
+	void _update_line_number_gutter_width();
 	void _line_number_draw_callback(int p_line, int p_gutter, const Rect2 &p_region);
 
 	/* Fold Gutter */
@@ -124,6 +128,11 @@ private:
 
 	/* Line Folding */
 	bool line_folding_enabled = false;
+	String code_region_start_string;
+	String code_region_end_string;
+	String code_region_start_tag = "region";
+	String code_region_end_tag = "endregion";
+	void _update_code_region_tags();
 
 	/* Delimiters */
 	enum DelimiterType {
@@ -208,6 +217,7 @@ private:
 	int code_completion_longest_line = 0;
 	Rect2i code_completion_rect;
 	Rect2i code_completion_scroll_rect;
+	float code_completion_pan_offset = 0.0f;
 
 	HashSet<char32_t> code_completion_prefixes;
 	List<ScriptLanguage::CodeCompletionOption> code_completion_option_submitted;
@@ -216,33 +226,44 @@ private:
 
 	void _update_scroll_selected_line(float p_mouse_y);
 	void _filter_code_completion_candidates_impl();
+	bool _should_reset_selected_option_for_new_options(const Vector<ScriptLanguage::CodeCompletionOption> &p_new_options);
 
 	/* Line length guidelines */
 	TypedArray<int> line_length_guideline_columns;
 
 	/* Symbol lookup */
 	bool symbol_lookup_on_click_enabled = false;
+	Point2i symbol_lookup_pos; // Column and line.
+	String symbol_lookup_new_word;
+	String symbol_lookup_word;
 
-	String symbol_lookup_new_word = "";
-	String symbol_lookup_word = "";
-	Point2i symbol_lookup_pos;
+	/* Symbol tooltip */
+	bool symbol_tooltip_on_hover_enabled = false;
+	Point2i symbol_tooltip_pos; // Column and line.
+	String symbol_tooltip_word;
+	Timer *symbol_tooltip_timer = nullptr;
+	void _on_symbol_tooltip_timer_timeout();
 
 	/* Visual */
 	struct ThemeCache {
 		/* Gutters */
 		Color code_folding_color = Color(1, 1, 1);
+		Color folded_code_region_color = Color(1, 1, 1);
 		Ref<Texture2D> can_fold_icon;
 		Ref<Texture2D> folded_icon;
+		Ref<Texture2D> can_fold_code_region_icon;
+		Ref<Texture2D> folded_code_region_icon;
 		Ref<Texture2D> folded_eol_icon;
+		Ref<Texture2D> completion_color_bg;
 
 		Color breakpoint_color = Color(1, 1, 1);
-		Ref<Texture2D> breakpoint_icon = Ref<Texture2D>();
+		Ref<Texture2D> breakpoint_icon;
 
 		Color bookmark_color = Color(1, 1, 1);
-		Ref<Texture2D> bookmark_icon = Ref<Texture2D>();
+		Ref<Texture2D> bookmark_icon;
 
 		Color executing_line_color = Color(1, 1, 1);
-		Ref<Texture2D> executing_line_icon = Ref<Texture2D>();
+		Ref<Texture2D> executing_line_icon;
 
 		Color line_number_color = Color(1, 1, 1);
 
@@ -269,10 +290,16 @@ private:
 		/* Other visuals */
 		Ref<StyleBox> style_normal;
 
+		Color brace_mismatch_color;
+
 		Ref<Font> font;
 		int font_size = 16;
 		int line_spacing = 1;
 	} theme_cache;
+
+	virtual Color _get_brace_mismatch_color() const override;
+	virtual Color _get_code_folding_color() const override;
+	virtual Ref<Texture2D> _get_folded_eol_icon() const override;
 
 	/* Callbacks */
 	int lines_edited_changed = 0;
@@ -283,17 +310,26 @@ private:
 	void _text_set();
 	void _text_changed();
 
+	void _apply_project_settings();
+
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
-	virtual void _update_theme_item_cache() override;
+#ifndef DISABLE_DEPRECATED
+	String _get_text_for_symbol_lookup_bind_compat_73196();
+	void _add_code_completion_option_compat_84906(CodeCompletionKind p_type, const String &p_display_text, const String &p_insert_text, const Color &p_text_color = Color(1, 1, 1), const Ref<Resource> &p_icon = Ref<Resource>(), const Variant &p_value = Variant::NIL, int p_location = LOCATION_OTHER);
+	static void _bind_compatibility_methods();
+#endif
+
+	virtual void _unhide_carets() override;
 
 	/* Text manipulation */
 
 	// Overridable actions
 	virtual void _handle_unicode_input_internal(const uint32_t p_unicode, int p_caret) override;
 	virtual void _backspace_internal(int p_caret) override;
+	virtual void _cut_internal(int p_caret) override;
 
 	GDVIRTUAL1(_confirm_code_completion, bool)
 	GDVIRTUAL1(_request_code_completion, bool)
@@ -389,9 +425,18 @@ public:
 	void fold_all_lines();
 	void unfold_all_lines();
 	void toggle_foldable_line(int p_line);
+	void toggle_foldable_lines_at_carets();
 
 	bool is_line_folded(int p_line) const;
 	TypedArray<int> get_folded_lines() const;
+
+	/* Code region */
+	void create_code_region();
+	String get_code_region_start_tag() const;
+	String get_code_region_end_tag() const;
+	void set_code_region_tags(const String &p_start = "region", const String &p_end = "endregion");
+	bool is_line_code_region_start(int p_line) const;
+	bool is_line_code_region_end(int p_line) const;
 
 	/* Delimiters */
 	void add_string_delimiter(const String &p_start_key, const String &p_end_key, bool p_line_only = false);
@@ -435,7 +480,7 @@ public:
 
 	void request_code_completion(bool p_force = false);
 
-	void add_code_completion_option(CodeCompletionKind p_type, const String &p_display_text, const String &p_insert_text, const Color &p_text_color = Color(1, 1, 1), const Ref<Resource> &p_icon = Ref<Resource>(), const Variant &p_value = Variant::NIL, int p_location = LOCATION_OTHER);
+	void add_code_completion_option(CodeCompletionKind p_type, const String &p_display_text, const String &p_insert_text, const Color &p_text_color = Color(1, 1, 1), const Ref<Resource> &p_icon = Ref<Resource>(), const Variant &p_value = Variant(), int p_location = LOCATION_OTHER);
 	void update_code_completion_options(bool p_forced = false);
 
 	TypedArray<Dictionary> get_code_completion_options() const;
@@ -455,9 +500,21 @@ public:
 	void set_symbol_lookup_on_click_enabled(bool p_enabled);
 	bool is_symbol_lookup_on_click_enabled() const;
 
-	String get_text_for_symbol_lookup();
+	String get_text_for_symbol_lookup() const;
+	String get_text_with_cursor_char(int p_line, int p_column) const;
 
 	void set_symbol_lookup_word_as_valid(bool p_valid);
+
+	/* Symbol tooltip */
+	void set_symbol_tooltip_on_hover_enabled(bool p_enabled);
+	bool is_symbol_tooltip_on_hover_enabled() const;
+
+	/* Text manipulation */
+	void move_lines_up();
+	void move_lines_down();
+	void delete_lines();
+	void duplicate_selection();
+	void duplicate_lines();
 
 	CodeEdit();
 	~CodeEdit();

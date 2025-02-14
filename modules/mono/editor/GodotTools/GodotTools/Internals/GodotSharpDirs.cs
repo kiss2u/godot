@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using Godot;
 using Godot.NativeInterop;
@@ -48,28 +49,31 @@ namespace GodotTools.Internals
             }
         }
 
+
+        public static string CSharpProjectName
+        {
+            get
+            {
+                Internal.godot_icall_GodotSharpDirs_CSharpProjectName(out godot_string dest);
+                using (dest)
+                    return Marshaling.ConvertStringToManaged(dest);
+            }
+        }
+
+        [MemberNotNull("_projectAssemblyName", "_projectSlnPath", "_projectCsProjPath")]
         public static void DetermineProjectLocation()
         {
-            static string DetermineProjectName()
-            {
-                string projectAssemblyName = (string)ProjectSettings.GetSetting("application/config/name");
-                projectAssemblyName = projectAssemblyName.ToSafeDirName();
-                if (string.IsNullOrEmpty(projectAssemblyName))
-                    projectAssemblyName = "UnnamedProject";
-                return projectAssemblyName;
-            }
-
-            _projectAssemblyName = (string)ProjectSettings.GetSetting("dotnet/project/assembly_name");
+            _projectAssemblyName = (string?)ProjectSettings.GetSetting("dotnet/project/assembly_name");
             if (string.IsNullOrEmpty(_projectAssemblyName))
             {
-                _projectAssemblyName = DetermineProjectName();
+                _projectAssemblyName = CSharpProjectName;
                 ProjectSettings.SetSetting("dotnet/project/assembly_name", _projectAssemblyName);
             }
 
-            string slnParentDir = (string)ProjectSettings.GetSetting("dotnet/project/solution_directory");
+            string? slnParentDir = (string?)ProjectSettings.GetSetting("dotnet/project/solution_directory");
             if (string.IsNullOrEmpty(slnParentDir))
                 slnParentDir = "res://";
-            else if (!slnParentDir.StartsWith("res://"))
+            else if (!slnParentDir.StartsWith("res://", System.StringComparison.Ordinal))
                 slnParentDir = "res://" + slnParentDir;
 
             // The csproj should be in the same folder as project.godot.
@@ -82,9 +86,9 @@ namespace GodotTools.Internals
                 string.Concat(_projectAssemblyName, ".csproj"));
         }
 
-        private static string _projectAssemblyName;
-        private static string _projectSlnPath;
-        private static string _projectCsProjPath;
+        private static string? _projectAssemblyName;
+        private static string? _projectSlnPath;
+        private static string? _projectCsProjPath;
 
         public static string ProjectAssemblyName
         {
@@ -113,6 +117,16 @@ namespace GodotTools.Internals
                 if (_projectCsProjPath == null)
                     DetermineProjectLocation();
                 return _projectCsProjPath;
+            }
+        }
+
+        public static string ProjectBaseOutputPath
+        {
+            get
+            {
+                if (_projectCsProjPath == null)
+                    DetermineProjectLocation();
+                return Path.Combine(Path.GetDirectoryName(_projectCsProjPath)!, ".godot", "mono", "temp", "bin");
             }
         }
 

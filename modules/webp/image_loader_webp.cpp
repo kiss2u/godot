@@ -30,13 +30,8 @@
 
 #include "image_loader_webp.h"
 
-#include "core/config/project_settings.h"
-#include "core/io/marshalls.h"
-#include "core/os/os.h"
-#include "core/string/print_string.h"
 #include "webp_common.h"
 
-#include <stdlib.h>
 #include <webp/decode.h>
 #include <webp/encode.h>
 

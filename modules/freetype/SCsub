@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from misc.utility.scons_hints import *
 
 Import("env")
 Import("env_modules")
@@ -61,19 +62,11 @@ if env["builtin_freetype"]:
     if env["brotli"]:
         env_freetype.Append(CPPDEFINES=["FT_CONFIG_OPTION_USE_BROTLI"])
 
-    if env["platform"] == "uwp":
-        # Include header for UWP to fix build issues
-        env_freetype.Append(CCFLAGS=["/FI", '"modules/freetype/uwpdef.h"'])
-        # Globally too, as freetype is used in scene (see bottom)
-        env.Append(CCFLAGS=["/FI", '"modules/freetype/uwpdef.h"'])
-
     env_freetype.Prepend(CPPPATH=[thirdparty_dir + "/include"])
     # Also needed in main env for scene/
     env.Prepend(CPPPATH=[thirdparty_dir + "/include"])
 
     env_freetype.Append(CPPDEFINES=["FT2_BUILD_LIBRARY", "FT_CONFIG_OPTION_USE_PNG", "FT_CONFIG_OPTION_SYSTEM_ZLIB"])
-    if env.dev_build:
-        env_freetype.Append(CPPDEFINES=["ZLIB_DEBUG"])
 
     # Also requires libpng headers
     if env["builtin_libpng"]:

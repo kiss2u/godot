@@ -31,14 +31,15 @@
 #include "project_settings.h"
 
 #include "core/core_bind.h" // For Compression enum.
-#include "core/core_string_names.h"
 #include "core/input/input_map.h"
 #include "core/io/config_file.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/marshalls.h"
-#include "core/os/keyboard.h"
+#include "core/io/resource_uid.h"
+#include "core/object/script_language.h"
+#include "core/templates/rb_set.h"
 #include "core/variant/typed_array.h"
 #include "core/variant/variant_parser.h"
 #include "core/version.h"
@@ -65,14 +66,6 @@ String ProjectSettings::get_project_data_path() const {
 
 String ProjectSettings::get_resource_path() const {
 	return resource_path;
-}
-
-String ProjectSettings::get_safe_project_name() const {
-	String safe_name = OS::get_singleton()->get_safe_dir_name(get("application/config/name"));
-	if (safe_name.is_empty()) {
-		safe_name = "UnnamedProject";
-	}
-	return safe_name;
 }
 
 String ProjectSettings::get_imported_files_path() const {
@@ -103,7 +96,7 @@ const PackedStringArray ProjectSettings::_get_supported_features() {
 	features.append(VERSION_FULL_CONFIG);
 	features.append(VERSION_FULL_BUILD);
 
-#ifdef VULKAN_ENABLED
+#ifdef RD_ENABLED
 	features.append("Forward Plus");
 	features.append("Mobile");
 #endif
@@ -154,29 +147,29 @@ const PackedStringArray ProjectSettings::_trim_to_supported_features(const Packe
 #endif // TOOLS_ENABLED
 
 String ProjectSettings::localize_path(const String &p_path) const {
-	if (resource_path.is_empty() || (p_path.is_absolute_path() && !p_path.begins_with(resource_path))) {
-		return p_path.simplify_path();
+	String path = p_path.simplify_path();
+
+	if (resource_path.is_empty() || (path.is_absolute_path() && !path.begins_with(resource_path))) {
+		return path;
 	}
 
 	// Check if we have a special path (like res://) or a protocol identifier.
-	int p = p_path.find("://");
+	int p = path.find("://");
 	bool found = false;
 	if (p > 0) {
 		found = true;
 		for (int i = 0; i < p; i++) {
-			if (!is_ascii_alphanumeric_char(p_path[i])) {
+			if (!is_ascii_alphanumeric_char(path[i])) {
 				found = false;
 				break;
 			}
 		}
 	}
 	if (found) {
-		return p_path.simplify_path();
+		return path;
 	}
 
 	Ref<DirAccess> dir = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-
-	String path = p_path.replace("\\", "/").simplify_path();
 
 	if (dir->change_dir(path) == OK) {
 		String cwd = dir->get_current_dir();
@@ -195,12 +188,12 @@ String ProjectSettings::localize_path(const String &p_path) const {
 		cwd = cwd.path_join("");
 
 		if (!cwd.begins_with(res_path)) {
-			return p_path;
+			return path;
 		}
 
 		return cwd.replace_first(res_path, "res://");
 	} else {
-		int sep = path.rfind("/");
+		int sep = path.rfind_char('/');
 		if (sep == -1) {
 			return "res://" + path;
 		}
@@ -220,41 +213,46 @@ String ProjectSettings::localize_path(const String &p_path) const {
 }
 
 void ProjectSettings::set_initial_value(const String &p_name, const Variant &p_value) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 
 	// Duplicate so that if value is array or dictionary, changing the setting will not change the stored initial value.
 	props[p_name].initial = p_value.duplicate();
 }
 
 void ProjectSettings::set_restart_if_changed(const String &p_name, bool p_restart) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 	props[p_name].restart_if_changed = p_restart;
 }
 
 void ProjectSettings::set_as_basic(const String &p_name, bool p_basic) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 	props[p_name].basic = p_basic;
 }
 
 void ProjectSettings::set_as_internal(const String &p_name, bool p_internal) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 	props[p_name].internal = p_internal;
 }
 
 void ProjectSettings::set_ignore_value_in_docs(const String &p_name, bool p_ignore) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 #ifdef DEBUG_METHODS_ENABLED
 	props[p_name].ignore_value_in_docs = p_ignore;
 #endif
 }
 
 bool ProjectSettings::get_ignore_value_in_docs(const String &p_name) const {
-	ERR_FAIL_COND_V_MSG(!props.has(p_name), false, "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_V_MSG(!props.has(p_name), false, vformat("Request for nonexistent project setting: '%s'.", p_name));
 #ifdef DEBUG_METHODS_ENABLED
 	return props[p_name].ignore_value_in_docs;
 #else
 	return false;
 #endif
+}
+
+void ProjectSettings::add_hidden_prefix(const String &p_prefix) {
+	ERR_FAIL_COND_MSG(hidden_prefixes.has(p_prefix), vformat("Hidden prefix '%s' already exists.", p_prefix));
+	hidden_prefixes.push_back(p_prefix);
 }
 
 String ProjectSettings::globalize_path(const String &p_path) const {
@@ -263,6 +261,12 @@ String ProjectSettings::globalize_path(const String &p_path) const {
 			return p_path.replace("res:/", resource_path);
 		}
 		return p_path.replace("res://", "");
+	} else if (p_path.begins_with("uid://")) {
+		const String path = ResourceUID::uid_to_path(p_path);
+		if (!resource_path.is_empty()) {
+			return path.replace("res:/", resource_path);
+		}
+		return path.replace("res://", "");
 	} else if (p_path.begins_with("user://")) {
 		String data_dir = OS::get_singleton()->get_user_data_dir();
 		if (!data_dir.is_empty()) {
@@ -284,18 +288,24 @@ bool ProjectSettings::_set(const StringName &p_name, const Variant &p_value) {
 			if (autoloads.has(node_name)) {
 				remove_autoload(node_name);
 			}
+		} else if (p_name.operator String().begins_with("global_group/")) {
+			String group_name = p_name.operator String().get_slice("/", 1);
+			if (global_groups.has(group_name)) {
+				remove_global_group(group_name);
+			}
 		}
 	} else {
-		if (p_name == CoreStringNames::get_singleton()->_custom_features) {
+		if (p_name == CoreStringName(_custom_features)) {
 			Vector<String> custom_feature_array = String(p_value).split(",");
 			for (int i = 0; i < custom_feature_array.size(); i++) {
 				custom_features.insert(custom_feature_array[i]);
 			}
+			_queue_changed();
 			return true;
 		}
 
 		{ // Feature overrides.
-			int dot = p_name.operator String().find(".");
+			int dot = p_name.operator String().find_char('.');
 			if (dot != -1) {
 				Vector<String> s = p_name.operator String().split(".");
 
@@ -324,14 +334,18 @@ bool ProjectSettings::_set(const StringName &p_name, const Variant &p_value) {
 			String path = p_value;
 			if (path.begins_with("*")) {
 				autoload.is_singleton = true;
-				autoload.path = path.substr(1);
+				autoload.path = path.substr(1).simplify_path();
 			} else {
-				autoload.path = path;
+				autoload.path = path.simplify_path();
 			}
 			add_autoload(autoload);
+		} else if (p_name.operator String().begins_with("global_group/")) {
+			String group_name = p_name.operator String().get_slice("/", 1);
+			add_global_group(group_name, p_value);
 		}
 	}
 
+	_queue_changed();
 	return true;
 }
 
@@ -339,7 +353,6 @@ bool ProjectSettings::_get(const StringName &p_name, Variant &r_ret) const {
 	_THREAD_SAFE_METHOD_
 
 	if (!props.has(p_name)) {
-		WARN_PRINT("Property not found: " + String(p_name));
 		return false;
 	}
 	r_ret = props[p_name].variant;
@@ -363,7 +376,7 @@ Variant ProjectSettings::get_setting_with_override(const StringName &p_name) con
 	}
 
 	if (!props.has(name)) {
-		WARN_PRINT("Property not found: " + String(name));
+		WARN_PRINT(vformat("Property not found: '%s'.", String(name)));
 		return Variant();
 	}
 	return props[name].variant;
@@ -394,7 +407,18 @@ void ProjectSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 		vc.name = E.key;
 		vc.order = v->order;
 		vc.type = v->variant.get_type();
-		if (v->internal || vc.name.begins_with("input/") || vc.name.begins_with("importer_defaults/") || vc.name.begins_with("import/") || vc.name.begins_with("autoload/") || vc.name.begins_with("editor_plugins/") || vc.name.begins_with("shader_globals/")) {
+
+		bool internal = v->internal;
+		if (!internal) {
+			for (const String &F : hidden_prefixes) {
+				if (vc.name.begins_with(F)) {
+					internal = true;
+					break;
+				}
+			}
+		}
+
+		if (internal) {
 			vc.flags = PROPERTY_USAGE_STORAGE;
 		} else {
 			vc.flags = PROPERTY_USAGE_EDITOR | PROPERTY_USAGE_STORAGE;
@@ -416,7 +440,7 @@ void ProjectSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 
 	for (const _VCSort &E : vclist) {
 		String prop_info_name = E.name;
-		int dot = prop_info_name.find(".");
+		int dot = prop_info_name.find_char('.');
 		if (dot != -1 && !custom_prop_info.has(prop_info_name)) {
 			prop_info_name = prop_info_name.substr(0, dot);
 		}
@@ -432,25 +456,69 @@ void ProjectSettings::_get_property_list(List<PropertyInfo> *p_list) const {
 	}
 }
 
-bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_files, int p_offset) {
+void ProjectSettings::_queue_changed() {
+	if (is_changed || !MessageQueue::get_singleton() || MessageQueue::get_singleton()->get_max_buffer_usage() == 0) {
+		return;
+	}
+	is_changed = true;
+	callable_mp(this, &ProjectSettings::_emit_changed).call_deferred();
+}
+
+void ProjectSettings::_emit_changed() {
+	if (!is_changed) {
+		return;
+	}
+	is_changed = false;
+	emit_signal("settings_changed");
+}
+
+bool ProjectSettings::load_resource_pack(const String &p_pack, bool p_replace_files, int p_offset) {
+	return ProjectSettings::_load_resource_pack(p_pack, p_replace_files, p_offset, false);
+}
+
+bool ProjectSettings::_load_resource_pack(const String &p_pack, bool p_replace_files, int p_offset, bool p_main_pack) {
 	if (PackedData::get_singleton()->is_disabled()) {
 		return false;
 	}
 
-	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files, p_offset) == OK;
+	if (p_pack == "res://") {
+		// Loading the resource directory as a pack source is reserved for internal use only.
+		return false;
+	}
 
+	if (!p_main_pack && !using_datapack && !OS::get_singleton()->get_resource_dir().is_empty()) {
+		// Add the project's resource file system to PackedData so directory access keeps working when
+		// the game is running without a main pack, like in the editor or on Android.
+		PackedData::get_singleton()->add_pack_source(memnew(PackedSourceDirectory));
+		PackedData::get_singleton()->add_pack("res://", false, 0);
+		DirAccess::make_default<DirAccessPack>(DirAccess::ACCESS_RESOURCES);
+		using_datapack = true;
+	}
+
+	bool ok = PackedData::get_singleton()->add_pack(p_pack, p_replace_files, p_offset) == OK;
 	if (!ok) {
 		return false;
 	}
 
-	//if data.pck is found, all directory access will be from here
-	DirAccess::make_default<DirAccessPack>(DirAccess::ACCESS_RESOURCES);
-	using_datapack = true;
+	if (project_loaded) {
+		// This pack may have declared new global classes (make sure they are picked up).
+		refresh_global_class_list();
+
+		// This pack may have defined new UIDs, make sure they are cached.
+		ResourceUID::get_singleton()->load_from_cache(false);
+	}
+
+	// If the data pack was found, all directory access will be from here.
+	if (!using_datapack) {
+		DirAccess::make_default<DirAccessPack>(DirAccess::ACCESS_RESOURCES);
+		using_datapack = true;
+	}
 
 	return true;
 }
 
 void ProjectSettings::_convert_to_last_version(int p_from_version) {
+#ifndef DISABLE_DEPRECATED
 	if (p_from_version <= 3) {
 		// Converts the actions from array to dictionary (array of events to dictionary with deadzone + events)
 		for (KeyValue<StringName, ProjectSettings::VariantContainer> &E : props) {
@@ -464,6 +532,25 @@ void ProjectSettings::_convert_to_last_version(int p_from_version) {
 			}
 		}
 	}
+	if (p_from_version == 5) {
+		// Converts the device in events from -3 to -1.
+		// -3 was introduced in GH-97707 as a way to prevent a clash in device IDs, but as reported in GH-99243, this leads to problems.
+		// -3 was used during dev-releases, so this conversion helps to revert such affected projects.
+		// This conversion doesn't affect any other projects, since -3 is not used otherwise.
+		for (KeyValue<StringName, ProjectSettings::VariantContainer> &E : props) {
+			if (String(E.key).begins_with("input/")) {
+				Dictionary action = E.value.variant;
+				Array events = action["events"];
+				for (int i = 0; i < events.size(); i++) {
+					Ref<InputEvent> ev = events[i];
+					if (ev.is_valid() && ev->get_device() == -3) {
+						ev->set_device(-1);
+					}
+				}
+			}
+		}
+	}
+#endif // DISABLE_DEPRECATED
 }
 
 /*
@@ -504,8 +591,8 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 	// Attempt with a user-defined main pack first
 
 	if (!p_main_pack.is_empty()) {
-		bool ok = _load_resource_pack(p_main_pack);
-		ERR_FAIL_COND_V_MSG(!ok, ERR_CANT_OPEN, "Cannot open resource pack '" + p_main_pack + "'.");
+		bool ok = _load_resource_pack(p_main_pack, false, 0, true);
+		ERR_FAIL_COND_V_MSG(!ok, ERR_CANT_OPEN, vformat("Cannot open resource pack '%s'.", p_main_pack));
 
 		Error err = _load_settings_text_or_binary("res://project.godot", "res://project.binary");
 		if (err == OK && !p_ignore_override) {
@@ -523,7 +610,7 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		// and if so, we attempt loading it at the end.
 
 		// Attempt with PCK bundled into executable.
-		bool found = _load_resource_pack(exec_path);
+		bool found = _load_resource_pack(exec_path, false, 0, true);
 
 		// Attempt with exec_name.pck.
 		// (This is the usual case when distributing a Godot game.)
@@ -539,20 +626,20 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 #ifdef MACOS_ENABLED
 		if (!found) {
 			// Attempt to load PCK from macOS .app bundle resources.
-			found = _load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().path_join(exec_basename + ".pck")) || _load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().path_join(exec_filename + ".pck"));
+			found = _load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().path_join(exec_basename + ".pck"), false, 0, true) || _load_resource_pack(OS::get_singleton()->get_bundle_resource_dir().path_join(exec_filename + ".pck"), false, 0, true);
 		}
 #endif
 
 		if (!found) {
 			// Try to load data pack at the location of the executable.
 			// As mentioned above, we have two potential names to attempt.
-			found = _load_resource_pack(exec_dir.path_join(exec_basename + ".pck")) || _load_resource_pack(exec_dir.path_join(exec_filename + ".pck"));
+			found = _load_resource_pack(exec_dir.path_join(exec_basename + ".pck"), false, 0, true) || _load_resource_pack(exec_dir.path_join(exec_filename + ".pck"), false, 0, true);
 		}
 
 		if (!found) {
 			// If we couldn't find them next to the executable, we attempt
 			// the current working directory. Same story, two tests.
-			found = _load_resource_pack(exec_basename + ".pck") || _load_resource_pack(exec_filename + ".pck");
+			found = _load_resource_pack(exec_basename + ".pck", false, 0, true) || _load_resource_pack(exec_filename + ".pck", false, 0, true);
 		}
 
 		// If we opened our package, try and load our project.
@@ -580,11 +667,33 @@ Error ProjectSettings::_setup(const String &p_path, const String &p_main_pack, b
 		return err;
 	}
 
+#ifdef MACOS_ENABLED
+	// Attempt to load project file from macOS .app bundle resources.
+	resource_path = OS::get_singleton()->get_bundle_resource_dir();
+	if (!resource_path.is_empty()) {
+		if (resource_path[resource_path.length() - 1] == '/') {
+			resource_path = resource_path.substr(0, resource_path.length() - 1); // Chop end.
+		}
+		Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
+		ERR_FAIL_COND_V_MSG(d.is_null(), ERR_CANT_CREATE, vformat("Cannot create DirAccess for path '%s'.", resource_path));
+		d->change_dir(resource_path);
+
+		Error err;
+
+		err = _load_settings_text_or_binary(resource_path.path_join("project.godot"), resource_path.path_join("project.binary"));
+		if (err == OK && !p_ignore_override) {
+			// Optional, we don't mind if it fails.
+			_load_settings_text(resource_path.path_join("override.cfg"));
+			return err;
+		}
+	}
+#endif
+
 	// Nothing was found, try to find a project file in provided path (`p_path`)
 	// or, if requested (`p_upwards`) in parent directories.
 
 	Ref<DirAccess> d = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	ERR_FAIL_COND_V_MSG(d.is_null(), ERR_CANT_CREATE, "Cannot create DirAccess for path '" + p_path + "'.");
+	ERR_FAIL_COND_V_MSG(d.is_null(), ERR_CANT_CREATE, vformat("Cannot create DirAccess for path '%s'.", p_path));
 	d->change_dir(p_path);
 
 	String current_dir = d->get_current_dir();
@@ -648,11 +757,13 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 
 	Compression::gzip_level = GLOBAL_GET("compression/formats/gzip/compression_level");
 
+	load_scene_groups_cache();
+
 	project_loaded = err == OK;
 	return err;
 }
 
-bool ProjectSettings::has_setting(String p_var) const {
+bool ProjectSettings::has_setting(const String &p_var) const {
 	_THREAD_SAFE_METHOD_
 
 	return props.has(p_var);
@@ -678,7 +789,7 @@ Error ProjectSettings::_load_settings_binary(const String &p_path) {
 		cs[slen] = 0;
 		f->get_buffer((uint8_t *)cs.ptr(), slen);
 		String key;
-		key.parse_utf8(cs.ptr());
+		key.parse_utf8(cs.ptr(), slen);
 
 		uint32_t vlen = f->get_32();
 		Vector<uint8_t> d;
@@ -686,7 +797,7 @@ Error ProjectSettings::_load_settings_binary(const String &p_path) {
 		f->get_buffer(d.ptrw(), vlen);
 		Variant value;
 		err = decode_variant(value, d.ptr(), d.size(), nullptr, true);
-		ERR_CONTINUE_MSG(err != OK, "Error decoding property: " + key + ".");
+		ERR_CONTINUE_MSG(err != OK, vformat("Error decoding property: '%s'.", key));
 		set(key, value);
 	}
 
@@ -728,7 +839,7 @@ Error ProjectSettings::_load_settings_text(const String &p_path) {
 			last_save_time = FileAccess::get_modified_time(get_resource_path().path_join("project.godot"));
 			return OK;
 		}
-		ERR_FAIL_COND_V_MSG(err != OK, err, "Error parsing " + p_path + " at line " + itos(lines) + ": " + error_text + " File might be corrupted.");
+		ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Error parsing '%s' at line %d: %s File might be corrupted.", p_path, lines, error_text));
 
 		if (!assign.is_empty()) {
 			if (section.is_empty() && assign == "config_version") {
@@ -754,7 +865,7 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, 
 		return OK;
 	} else if (err != ERR_FILE_NOT_FOUND) {
 		// If the file exists but can't be loaded, we want to know it.
-		ERR_PRINT("Couldn't load file '" + p_bin_path + "', error code " + itos(err) + ".");
+		ERR_PRINT(vformat("Couldn't load file '%s', error code %d.", p_bin_path, err));
 	}
 
 	// Fallback to text-based project.godot file if binary was not found.
@@ -762,7 +873,7 @@ Error ProjectSettings::_load_settings_text_or_binary(const String &p_text_path, 
 	if (err == OK) {
 		return OK;
 	} else if (err != ERR_FILE_NOT_FOUND) {
-		ERR_PRINT("Couldn't load file '" + p_text_path + "', error code " + itos(err) + ".");
+		ERR_PRINT(vformat("Couldn't load file '%s', error code %d.", p_text_path, err));
 	}
 
 	return err;
@@ -776,17 +887,17 @@ Error ProjectSettings::load_custom(const String &p_path) {
 }
 
 int ProjectSettings::get_order(const String &p_name) const {
-	ERR_FAIL_COND_V_MSG(!props.has(p_name), -1, "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_V_MSG(!props.has(p_name), -1, vformat("Request for nonexistent project setting: '%s'.", p_name));
 	return props[p_name].order;
 }
 
 void ProjectSettings::set_order(const String &p_name, int p_order) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 	props[p_name].order = p_order;
 }
 
 void ProjectSettings::set_builtin_order(const String &p_name) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 	if (props[p_name].order >= NO_BUILTIN_ORDER_BASE) {
 		props[p_name].order = last_builtin_order++;
 	}
@@ -794,12 +905,12 @@ void ProjectSettings::set_builtin_order(const String &p_name) {
 
 bool ProjectSettings::is_builtin_setting(const String &p_name) const {
 	// Return true because a false negative is worse than a false positive.
-	ERR_FAIL_COND_V_MSG(!props.has(p_name), true, "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_V_MSG(!props.has(p_name), true, vformat("Request for nonexistent project setting: '%s'.", p_name));
 	return props[p_name].order < NO_BUILTIN_ORDER_BASE;
 }
 
 void ProjectSettings::clear(const String &p_name) {
-	ERR_FAIL_COND_MSG(!props.has(p_name), "Request for nonexistent project setting: " + p_name + ".");
+	ERR_FAIL_COND_MSG(!props.has(p_name), vformat("Request for nonexistent project setting: '%s'.", p_name));
 	props.erase(p_name);
 }
 
@@ -814,7 +925,7 @@ Error ProjectSettings::save() {
 Error ProjectSettings::_save_settings_binary(const String &p_file, const RBMap<String, List<String>> &p_props, const CustomMap &p_custom, const String &p_custom_features) {
 	Error err;
 	Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
-	ERR_FAIL_COND_V_MSG(err != OK, err, "Couldn't save project.binary at " + p_file + ".");
+	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Couldn't save project.binary at '%s'.", p_file));
 
 	uint8_t hdr[4] = { 'E', 'C', 'F', 'G' };
 	file->store_buffer(hdr, 4);
@@ -826,9 +937,9 @@ Error ProjectSettings::_save_settings_binary(const String &p_file, const RBMap<S
 	}
 
 	if (!p_custom_features.is_empty()) {
-		file->store_32(count + 1);
-		//store how many properties are saved, add one for custom featuers, which must always go first
-		String key = CoreStringNames::get_singleton()->_custom_features;
+		// Store how many properties are saved, add one for custom features, which must always go first.
+		file->store_32(uint32_t(count + 1));
+		String key = CoreStringName(_custom_features);
 		file->store_pascal_string(key);
 
 		int len;
@@ -840,11 +951,12 @@ Error ProjectSettings::_save_settings_binary(const String &p_file, const RBMap<S
 
 		err = encode_variant(p_custom_features, buff.ptrw(), len, false);
 		ERR_FAIL_COND_V(err != OK, err);
-		file->store_32(len);
+		file->store_32(uint32_t(len));
 		file->store_buffer(buff.ptr(), buff.size());
 
 	} else {
-		file->store_32(count); //store how many properties are saved
+		// Store how many properties are saved.
+		file->store_32(uint32_t(count));
 	}
 
 	for (const KeyValue<String, List<String>> &E : p_props) {
@@ -871,7 +983,7 @@ Error ProjectSettings::_save_settings_binary(const String &p_file, const RBMap<S
 
 			err = encode_variant(value, buff.ptrw(), len, true);
 			ERR_FAIL_COND_V_MSG(err != OK, ERR_INVALID_DATA, "Error when trying to encode Variant.");
-			file->store_32(len);
+			file->store_32(uint32_t(len));
 			file->store_buffer(buff.ptr(), buff.size());
 		}
 	}
@@ -883,7 +995,7 @@ Error ProjectSettings::_save_settings_text(const String &p_file, const RBMap<Str
 	Error err;
 	Ref<FileAccess> file = FileAccess::open(p_file, FileAccess::WRITE, &err);
 
-	ERR_FAIL_COND_V_MSG(err != OK, err, "Couldn't save project.godot - " + p_file + ".");
+	ERR_FAIL_COND_V_MSG(err != OK, err, vformat("Couldn't save project.godot - %s.", p_file));
 
 	file->store_line("; Engine configuration file.");
 	file->store_line("; It's best edited using the editor UI and not directly,");
@@ -930,9 +1042,26 @@ Error ProjectSettings::_save_settings_text(const String &p_file, const RBMap<Str
 }
 
 Error ProjectSettings::_save_custom_bnd(const String &p_file) { // add other params as dictionary and array?
-
 	return save_custom(p_file);
 }
+
+#ifdef TOOLS_ENABLED
+bool _csproj_exists(const String &p_root_dir) {
+	Ref<DirAccess> dir = DirAccess::open(p_root_dir);
+	ERR_FAIL_COND_V(dir.is_null(), false);
+
+	dir->list_dir_begin();
+	String file_name = dir->_get_next();
+	while (file_name != "") {
+		if (!dir->current_is_dir() && file_name.get_extension() == "csproj") {
+			return true;
+		}
+		file_name = dir->_get_next();
+	}
+
+	return false;
+}
+#endif // TOOLS_ENABLED
 
 Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_custom, const Vector<String> &p_custom_features, bool p_merge_with_current) {
 	ERR_FAIL_COND_V_MSG(p_path.is_empty(), ERR_INVALID_PARAMETER, "Project settings save path cannot be empty.");
@@ -952,7 +1081,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
 		}
 	}
 	// Check for the existence of a csproj file.
-	if (FileAccess::exists(get_resource_path().path_join(get_safe_project_name() + ".csproj"))) {
+	if (_csproj_exists(get_resource_path())) {
 		// If there is a csproj file, add the C# feature if it doesn't already exist.
 		if (!project_features.has("C#")) {
 			project_features.append("C#");
@@ -1012,7 +1141,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
 		String category = E.name;
 		String name = E.name;
 
-		int div = category.find("/");
+		int div = category.find_char('/');
 
 		if (div < 0) {
 			category = "";
@@ -1039,7 +1168,7 @@ Error ProjectSettings::save_custom(const String &p_path, const CustomMap &p_cust
 	} else if (p_path.ends_with(".binary")) {
 		return _save_settings_binary(p_path, save_props, p_custom, save_features);
 	} else {
-		ERR_FAIL_V_MSG(ERR_FILE_UNRECOGNIZED, "Unknown config file format: " + p_path + ".");
+		ERR_FAIL_V_MSG(ERR_FILE_UNRECOGNIZED, vformat("Unknown config file format: '%s'.", p_path));
 	}
 }
 
@@ -1104,22 +1233,16 @@ bool ProjectSettings::is_project_loaded() const {
 }
 
 bool ProjectSettings::_property_can_revert(const StringName &p_name) const {
-	if (!props.has(p_name)) {
-		return false;
-	}
-
-	return props[p_name].initial != props[p_name].variant;
+	return props.has(p_name);
 }
 
 bool ProjectSettings::_property_get_revert(const StringName &p_name, Variant &r_property) const {
-	if (!props.has(p_name)) {
-		return false;
+	const RBMap<StringName, ProjectSettings::VariantContainer>::Element *value = props.find(p_name);
+	if (value) {
+		r_property = value->value().initial.duplicate();
+		return true;
 	}
-
-	// Duplicate so that if value is array or dictionary, changing the setting will not change the stored initial value.
-	r_property = props[p_name].initial.duplicate();
-
-	return true;
+	return false;
 }
 
 void ProjectSettings::set_setting(const String &p_setting, const Variant &p_value) {
@@ -1131,6 +1254,19 @@ Variant ProjectSettings::get_setting(const String &p_setting, const Variant &p_d
 		return get(p_setting);
 	} else {
 		return p_default_value;
+	}
+}
+
+void ProjectSettings::refresh_global_class_list() {
+	// This is called after mounting a new PCK file to pick up class changes.
+	is_global_class_list_loaded = false; // Make sure we read from the freshly mounted PCK.
+	Array script_classes = get_global_class_list();
+	for (int i = 0; i < script_classes.size(); i++) {
+		Dictionary c = script_classes[i];
+		if (!c.has("class") || !c.has("language") || !c.has("path") || !c.has("base") || !c.has("is_abstract") || !c.has("is_tool")) {
+			continue;
+		}
+		ScriptServer::add_global_class(c["class"], c["base"], c["language"], c["path"], c["is_abstract"], c["is_tool"]);
 	}
 }
 
@@ -1197,6 +1333,93 @@ ProjectSettings::AutoloadInfo ProjectSettings::get_autoload(const StringName &p_
 	return autoloads[p_name];
 }
 
+const HashMap<StringName, String> &ProjectSettings::get_global_groups_list() const {
+	return global_groups;
+}
+
+void ProjectSettings::add_global_group(const StringName &p_name, const String &p_description) {
+	ERR_FAIL_COND_MSG(p_name == StringName(), "Trying to add global group with no name.");
+	global_groups[p_name] = p_description;
+}
+
+void ProjectSettings::remove_global_group(const StringName &p_name) {
+	ERR_FAIL_COND_MSG(!global_groups.has(p_name), "Trying to remove non-existent global group.");
+	global_groups.erase(p_name);
+}
+
+bool ProjectSettings::has_global_group(const StringName &p_name) const {
+	return global_groups.has(p_name);
+}
+
+void ProjectSettings::remove_scene_groups_cache(const StringName &p_path) {
+	scene_groups_cache.erase(p_path);
+}
+
+void ProjectSettings::add_scene_groups_cache(const StringName &p_path, const HashSet<StringName> &p_cache) {
+	scene_groups_cache[p_path] = p_cache;
+}
+
+void ProjectSettings::save_scene_groups_cache() {
+	Ref<ConfigFile> cf;
+	cf.instantiate();
+	for (const KeyValue<StringName, HashSet<StringName>> &E : scene_groups_cache) {
+		if (E.value.is_empty()) {
+			continue;
+		}
+		Array list;
+		for (const StringName &group : E.value) {
+			list.push_back(group);
+		}
+		cf->set_value(E.key, "groups", list);
+	}
+	cf->save(get_scene_groups_cache_path());
+}
+
+String ProjectSettings::get_scene_groups_cache_path() const {
+	return get_project_data_path().path_join("scene_groups_cache.cfg");
+}
+
+void ProjectSettings::load_scene_groups_cache() {
+	Ref<ConfigFile> cf;
+	cf.instantiate();
+	if (cf->load(get_scene_groups_cache_path()) == OK) {
+		List<String> scene_paths;
+		cf->get_sections(&scene_paths);
+		for (const String &E : scene_paths) {
+			Array scene_groups = cf->get_value(E, "groups", Array());
+			HashSet<StringName> cache;
+			for (const Variant &scene_group : scene_groups) {
+				cache.insert(scene_group);
+			}
+			add_scene_groups_cache(E, cache);
+		}
+	}
+}
+
+const HashMap<StringName, HashSet<StringName>> &ProjectSettings::get_scene_groups_cache() const {
+	return scene_groups_cache;
+}
+
+#ifdef TOOLS_ENABLED
+void ProjectSettings::get_argument_options(const StringName &p_function, int p_idx, List<String> *r_options) const {
+	const String pf = p_function;
+	if (p_idx == 0) {
+		if (pf == "has_setting" || pf == "set_setting" || pf == "get_setting" || pf == "get_setting_with_override" ||
+				pf == "set_order" || pf == "get_order" || pf == "set_initial_value" || pf == "set_as_basic" ||
+				pf == "set_as_internal" || pf == "set_restart_if_changed" || pf == "clear") {
+			for (const KeyValue<StringName, VariantContainer> &E : props) {
+				if (E.value.hide_from_editor) {
+					continue;
+				}
+
+				r_options->push_back(String(E.key).quote());
+			}
+		}
+	}
+	Object::get_argument_options(p_function, p_idx, r_options);
+}
+#endif
+
 void ProjectSettings::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("has_setting", "name"), &ProjectSettings::has_setting);
 	ClassDB::bind_method(D_METHOD("set_setting", "name", "value"), &ProjectSettings::set_setting);
@@ -1214,9 +1437,11 @@ void ProjectSettings::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("localize_path", "path"), &ProjectSettings::localize_path);
 	ClassDB::bind_method(D_METHOD("globalize_path", "path"), &ProjectSettings::globalize_path);
 	ClassDB::bind_method(D_METHOD("save"), &ProjectSettings::save);
-	ClassDB::bind_method(D_METHOD("load_resource_pack", "pack", "replace_files", "offset"), &ProjectSettings::_load_resource_pack, DEFVAL(true), DEFVAL(0));
+	ClassDB::bind_method(D_METHOD("load_resource_pack", "pack", "replace_files", "offset"), &ProjectSettings::load_resource_pack, DEFVAL(true), DEFVAL(0));
 
 	ClassDB::bind_method(D_METHOD("save_custom", "file"), &ProjectSettings::_save_custom_bnd);
+
+	ADD_SIGNAL(MethodInfo("settings_changed"));
 }
 
 void ProjectSettings::_add_builtin_input_map() {
@@ -1232,7 +1457,7 @@ void ProjectSettings::_add_builtin_input_map() {
 			}
 
 			Dictionary action;
-			action["deadzone"] = Variant(0.5f);
+			action["deadzone"] = Variant(InputMap::DEFAULT_DEADZONE);
 			action["events"] = events;
 
 			String action_name = "input/" + E.key;
@@ -1249,13 +1474,29 @@ ProjectSettings::ProjectSettings() {
 	CRASH_COND_MSG(singleton != nullptr, "Instantiating a new ProjectSettings singleton is not supported.");
 	singleton = this;
 
+#ifdef TOOLS_ENABLED
+	// Available only at runtime in editor builds. Needs to be processed before anything else to work properly.
+	if (!Engine::get_singleton()->is_editor_hint()) {
+		String editor_features = OS::get_singleton()->get_environment("GODOT_EDITOR_CUSTOM_FEATURES");
+		if (!editor_features.is_empty()) {
+			PackedStringArray feature_list = editor_features.split(",");
+			for (const String &s : feature_list) {
+				custom_features.insert(s);
+			}
+		}
+	}
+#endif
+
 	GLOBAL_DEF_BASIC("application/config/name", "");
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::DICTIONARY, "application/config/name_localized", PROPERTY_HINT_LOCALIZABLE_STRING), Dictionary());
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "application/config/description", PROPERTY_HINT_MULTILINE_TEXT), "");
+	GLOBAL_DEF_BASIC("application/config/version", "");
 	GLOBAL_DEF_INTERNAL(PropertyInfo(Variant::STRING, "application/config/tags"), PackedStringArray());
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "application/run/main_scene", PROPERTY_HINT_FILE, "*.tscn,*.scn,*.res"), "");
 	GLOBAL_DEF("application/run/disable_stdout", false);
 	GLOBAL_DEF("application/run/disable_stderr", false);
+	GLOBAL_DEF("application/run/print_header", true);
+	GLOBAL_DEF("application/run/enable_alt_space_menu", false);
 	GLOBAL_DEF_RST("application/config/use_hidden_project_data_directory", true);
 	GLOBAL_DEF("application/config/use_custom_user_dir", false);
 	GLOBAL_DEF("application/config/custom_user_dir_name", "");
@@ -1269,8 +1510,8 @@ ProjectSettings::ProjectSettings() {
 	// - Have a 16:9 aspect ratio,
 	// - Have both dimensions divisible by 8 to better play along with video recording,
 	// - Be displayable correctly in windowed mode on a 1366×768 display (tested on Windows 10 with default settings).
-	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "display/window/size/viewport_width", PROPERTY_HINT_RANGE, "0,7680,1,or_greater"), 1152); // 8K resolution
-	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "display/window/size/viewport_height", PROPERTY_HINT_RANGE, "0,4320,1,or_greater"), 648); // 8K resolution
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "display/window/size/viewport_width", PROPERTY_HINT_RANGE, "1,7680,1,or_greater"), 1152); // 8K resolution
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "display/window/size/viewport_height", PROPERTY_HINT_RANGE, "1,4320,1,or_greater"), 648); // 8K resolution
 
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "display/window/size/mode", PROPERTY_HINT_ENUM, "Windowed,Minimized,Maximized,Fullscreen,Exclusive Fullscreen"), 0);
 
@@ -1285,26 +1526,24 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF("display/window/size/transparent", false);
 	GLOBAL_DEF("display/window/size/extend_to_title", false);
 	GLOBAL_DEF("display/window/size/no_focus", false);
+	GLOBAL_DEF("display/window/size/sharp_corners", false);
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "display/window/size/window_width_override", PROPERTY_HINT_RANGE, "0,7680,1,or_greater"), 0); // 8K resolution
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "display/window/size/window_height_override", PROPERTY_HINT_RANGE, "0,4320,1,or_greater"), 0); // 8K resolution
 
 	GLOBAL_DEF("display/window/energy_saving/keep_screen_on", true);
-	GLOBAL_DEF("display/window/energy_saving/keep_screen_on.editor", false);
+	GLOBAL_DEF("animation/warnings/check_invalid_track_paths", true);
+	GLOBAL_DEF("animation/warnings/check_angle_interpolation_type_conflicting", true);
 
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "audio/buses/default_bus_layout", PROPERTY_HINT_FILE, "*.tres"), "res://default_bus_layout.tres");
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "audio/general/default_playback_type", PROPERTY_HINT_ENUM, "Stream,Sample"), 0);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "audio/general/default_playback_type.web", PROPERTY_HINT_ENUM, "Stream,Sample"), 1);
 	GLOBAL_DEF_RST("audio/general/text_to_speech", false);
 	GLOBAL_DEF_RST(PropertyInfo(Variant::FLOAT, "audio/general/2d_panning_strength", PROPERTY_HINT_RANGE, "0,2,0.01"), 0.5f);
 	GLOBAL_DEF_RST(PropertyInfo(Variant::FLOAT, "audio/general/3d_panning_strength", PROPERTY_HINT_RANGE, "0,2,0.01"), 0.5f);
 
-	PackedStringArray extensions;
-	extensions.push_back("gd");
-	if (Engine::get_singleton()->has_singleton("GodotSharp")) {
-		extensions.push_back("cs");
-	}
-	extensions.push_back("gdshader");
-
-	GLOBAL_DEF(PropertyInfo(Variant::PACKED_STRING_ARRAY, "editor/script/search_in_file_extensions"), extensions);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "audio/general/ios/session_category", PROPERTY_HINT_ENUM, "Ambient,Multi Route,Play and Record,Playback,Record,Solo Ambient"), 0);
+	GLOBAL_DEF("audio/general/ios/mix_with_others", false);
 
 	_add_builtin_input_map();
 
@@ -1313,15 +1552,25 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF("display/window/subwindows/embed_subwindows", true);
 	// Keep the enum values in sync with the `DisplayServer::VSyncMode` enum.
 	custom_prop_info["display/window/vsync/vsync_mode"] = PropertyInfo(Variant::INT, "display/window/vsync/vsync_mode", PROPERTY_HINT_ENUM, "Disabled,Enabled,Adaptive,Mailbox");
-	custom_prop_info["rendering/driver/threads/thread_model"] = PropertyInfo(Variant::INT, "rendering/driver/threads/thread_model", PROPERTY_HINT_ENUM, "Single-Unsafe,Single-Safe,Multi-Threaded");
+
+	GLOBAL_DEF("display/window/frame_pacing/android/enable_frame_pacing", true);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "display/window/frame_pacing/android/swappy_mode", PROPERTY_HINT_ENUM, "pipeline_forced_on,auto_fps_pipeline_forced_on,auto_fps_auto_pipeline"), 2);
+
+#ifdef DISABLE_DEPRECATED
+	custom_prop_info["rendering/driver/threads/thread_model"] = PropertyInfo(Variant::INT, "rendering/driver/threads/thread_model", PROPERTY_HINT_ENUM, "Safe:1,Separate");
+#else
+	custom_prop_info["rendering/driver/threads/thread_model"] = PropertyInfo(Variant::INT, "rendering/driver/threads/thread_model", PROPERTY_HINT_ENUM, "Unsafe (deprecated),Safe,Separate");
+#endif
 	GLOBAL_DEF("physics/2d/run_on_separate_thread", false);
 	GLOBAL_DEF("physics/3d/run_on_separate_thread", false);
 
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "display/window/stretch/mode", PROPERTY_HINT_ENUM, "disabled,canvas_items,viewport"), "disabled");
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "display/window/stretch/aspect", PROPERTY_HINT_ENUM, "ignore,keep,keep_width,keep_height,expand"), "keep");
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::FLOAT, "display/window/stretch/scale", PROPERTY_HINT_RANGE, "0.5,8.0,0.01"), 1.0);
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::STRING, "display/window/stretch/scale_mode", PROPERTY_HINT_ENUM, "fractional,integer"), "fractional");
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "debug/settings/profiler/max_functions", PROPERTY_HINT_RANGE, "128,65535,1"), 16384);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "debug/settings/profiler/max_timestamp_query_elements", PROPERTY_HINT_RANGE, "256,65535,1"), 256);
 
 	GLOBAL_DEF(PropertyInfo(Variant::BOOL, "compression/formats/zstd/long_distance_matching"), Compression::zstd_long_distance_matching);
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "compression/formats/zstd/compression_level", PROPERTY_HINT_RANGE, "1,22,1"), Compression::zstd_level);
@@ -1334,31 +1583,73 @@ ProjectSettings::ProjectSettings() {
 	GLOBAL_DEF("debug/settings/crash_handler/message.editor",
 			String("Please include this when reporting the bug on: https://github.com/godotengine/godot/issues"));
 	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/occlusion_culling/bvh_build_quality", PROPERTY_HINT_ENUM, "Low,Medium,High"), 2);
-	GLOBAL_DEF(PropertyInfo(Variant::INT, "memory/limits/multithreaded_server/rid_pool_prealloc", PROPERTY_HINT_RANGE, "0,500,1"), 60); // No negative and limit to 500 due to crashes.
+	GLOBAL_DEF_RST("rendering/occlusion_culling/jitter_projection", true);
+
 	GLOBAL_DEF_RST("internationalization/rendering/force_right_to_left_layout_direction", false);
-	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "internationalization/rendering/root_node_layout_direction", PROPERTY_HINT_RANGE, "Based on Locale,Left-to-Right,Right-to-Left"), 0);
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "internationalization/rendering/root_node_layout_direction", PROPERTY_HINT_ENUM, "Based on Application Locale,Left-to-Right,Right-to-Left,Based on System Locale"), 0);
+	GLOBAL_DEF_BASIC("internationalization/rendering/root_node_auto_translate", true);
 
 	GLOBAL_DEF(PropertyInfo(Variant::INT, "gui/timers/incremental_search_max_interval_msec", PROPERTY_HINT_RANGE, "0,10000,1,or_greater"), 2000);
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "gui/timers/tooltip_delay_sec", PROPERTY_HINT_RANGE, "0,5,0.01,or_greater"), 0.5);
+#ifdef TOOLS_ENABLED
+	GLOBAL_DEF("gui/timers/tooltip_delay_sec.editor_hint", 0.5);
+#endif
 
 	GLOBAL_DEF_BASIC("gui/common/snap_controls_to_pixels", true);
 	GLOBAL_DEF_BASIC("gui/fonts/dynamic_fonts/use_oversampling", true);
 
-	GLOBAL_DEF("rendering/rendering_device/staging_buffer/block_size_kb", 256);
-	GLOBAL_DEF("rendering/rendering_device/staging_buffer/max_size_mb", 128);
-	GLOBAL_DEF("rendering/rendering_device/staging_buffer/texture_upload_region_size_px", 64);
-	GLOBAL_DEF("rendering/rendering_device/pipeline_cache/save_chunk_size_mb", 3.0);
-	GLOBAL_DEF("rendering/rendering_device/vulkan/max_descriptors_per_pool", 64);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/rendering_device/vsync/frame_queue_size", PROPERTY_HINT_RANGE, "2,3,1"), 2);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/rendering_device/vsync/swapchain_image_count", PROPERTY_HINT_RANGE, "2,4,1"), 3);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/rendering_device/staging_buffer/block_size_kb", PROPERTY_HINT_RANGE, "4,2048,1,or_greater"), 256);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/rendering_device/staging_buffer/max_size_mb", PROPERTY_HINT_RANGE, "1,1024,1,or_greater"), 128);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/rendering_device/staging_buffer/texture_upload_region_size_px", PROPERTY_HINT_RANGE, "1,256,1,or_greater"), 64);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/rendering_device/staging_buffer/texture_download_region_size_px", PROPERTY_HINT_RANGE, "1,256,1,or_greater"), 64);
+	GLOBAL_DEF_RST(PropertyInfo(Variant::BOOL, "rendering/rendering_device/pipeline_cache/enable"), true);
+	GLOBAL_DEF(PropertyInfo(Variant::FLOAT, "rendering/rendering_device/pipeline_cache/save_chunk_size_mb", PROPERTY_HINT_RANGE, "0.000001,64.0,0.001,or_greater"), 3.0);
+	GLOBAL_DEF(PropertyInfo(Variant::INT, "rendering/rendering_device/vulkan/max_descriptors_per_pool", PROPERTY_HINT_RANGE, "1,256,1,or_greater"), 64);
+
+	GLOBAL_DEF_RST("rendering/rendering_device/d3d12/max_resource_descriptors_per_frame", 16384);
+	custom_prop_info["rendering/rendering_device/d3d12/max_resource_descriptors_per_frame"] = PropertyInfo(Variant::INT, "rendering/rendering_device/d3d12/max_resource_descriptors_per_frame", PROPERTY_HINT_RANGE, "512,262144");
+	GLOBAL_DEF_RST("rendering/rendering_device/d3d12/max_sampler_descriptors_per_frame", 1024);
+	custom_prop_info["rendering/rendering_device/d3d12/max_sampler_descriptors_per_frame"] = PropertyInfo(Variant::INT, "rendering/rendering_device/d3d12/max_sampler_descriptors_per_frame", PROPERTY_HINT_RANGE, "256,2048");
+	GLOBAL_DEF_RST("rendering/rendering_device/d3d12/max_misc_descriptors_per_frame", 512);
+	custom_prop_info["rendering/rendering_device/d3d12/max_misc_descriptors_per_frame"] = PropertyInfo(Variant::INT, "rendering/rendering_device/d3d12/max_misc_descriptors_per_frame", PROPERTY_HINT_RANGE, "32,4096");
+
+	// The default value must match the minor part of the Agility SDK version
+	// installed by the scripts provided in the repository
+	// (check `misc/scripts/install_d3d12_sdk_windows.py`).
+	// For example, if the script installs 1.613.3, the default value must be 613.
+	GLOBAL_DEF_RST(PropertyInfo(Variant::INT, "rendering/rendering_device/d3d12/agility_sdk_version", PROPERTY_HINT_RANGE, "0,10000,1,or_greater,hide_slider"), 613);
 
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "rendering/textures/canvas_textures/default_texture_filter", PROPERTY_HINT_ENUM, "Nearest,Linear,Linear Mipmap,Nearest Mipmap"), 1);
 	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "rendering/textures/canvas_textures/default_texture_repeat", PROPERTY_HINT_ENUM, "Disable,Enable,Mirror"), 0);
 
-	// These properties will not show up in the dialog nor in the documentation. If you want to exclude whole groups, see _get_property_list() method.
+	GLOBAL_DEF("collada/use_ambient", false);
+
+	// Input settings
+	GLOBAL_DEF_BASIC("input_devices/pointing/android/enable_long_press_as_right_click", false);
+	GLOBAL_DEF_BASIC("input_devices/pointing/android/enable_pan_and_scale_gestures", false);
+	GLOBAL_DEF_BASIC(PropertyInfo(Variant::INT, "input_devices/pointing/android/rotary_input_scroll_axis", PROPERTY_HINT_ENUM, "Horizontal,Vertical"), 1);
+
+	// These properties will not show up in the dialog. If you want to exclude whole groups, use add_hidden_prefix().
 	GLOBAL_DEF_INTERNAL("application/config/features", PackedStringArray());
 	GLOBAL_DEF_INTERNAL("internationalization/locale/translation_remaps", PackedStringArray());
 	GLOBAL_DEF_INTERNAL("internationalization/locale/translations", PackedStringArray());
 	GLOBAL_DEF_INTERNAL("internationalization/locale/translations_pot_files", PackedStringArray());
+	GLOBAL_DEF_INTERNAL("internationalization/locale/translation_add_builtin_strings_to_pot", false);
+
+	ProjectSettings::get_singleton()->add_hidden_prefix("input/");
+}
+
+ProjectSettings::ProjectSettings(const String &p_path) {
+	if (load_custom(p_path) == OK) {
+		resource_path = p_path.get_base_dir();
+		project_loaded = true;
+	}
 }
 
 ProjectSettings::~ProjectSettings() {
-	singleton = nullptr;
+	if (singleton == this) {
+		singleton = nullptr;
+	}
 }

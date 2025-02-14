@@ -64,7 +64,7 @@ public:
 		}
 	};
 
-	static Triangle create_triangle(const Vector<Vector2> &p_vertices, const int &p_a, const int &p_b, const int &p_c) {
+	static Triangle create_triangle(const Vector<Vector2> &p_vertices, int p_a, int p_b, int p_c) {
 		Triangle triangle = Triangle(p_a, p_b, p_c);
 
 		// Get the values of the circumcircle and store them inside the triangle object.
@@ -145,7 +145,7 @@ public:
 		// Filter out the triangles containing vertices of the bounding triangle.
 		int preserved_count = 0;
 		Triangle *triangles_ptrw = triangles.ptrw();
-		for (int i = 0; i < triangles.size() - 1; i++) {
+		for (int i = 0; i < triangles.size(); i++) {
 			if (!(triangles[i].points[0] >= point_count || triangles[i].points[1] >= point_count || triangles[i].points[2] >= point_count)) {
 				triangles_ptrw[preserved_count] = triangles[i];
 				preserved_count++;

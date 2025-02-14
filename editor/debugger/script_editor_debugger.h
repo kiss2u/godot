@@ -31,6 +31,7 @@
 #ifndef SCRIPT_EDITOR_DEBUGGER_H
 #define SCRIPT_EDITOR_DEBUGGER_H
 
+#include "core/object/script_language.h"
 #include "core/os/os.h"
 #include "editor/debugger/editor_debugger_inspector.h"
 #include "editor/debugger/editor_debugger_node.h"
@@ -55,6 +56,7 @@ class SceneDebuggerTree;
 class EditorDebuggerPlugin;
 class DebugAdapterProtocol;
 class DebugAdapterParser;
+class EditorExpressionEvaluator;
 
 class ScriptEditorDebugger : public MarginContainer {
 	GDCLASS(ScriptEditorDebugger, MarginContainer);
@@ -138,6 +140,7 @@ private:
 
 	Tree *stack_dump = nullptr;
 	LineEdit *search = nullptr;
+	OptionButton *threads = nullptr;
 	EditorDebuggerInspector *inspector = nullptr;
 	SceneDebuggerTree *scene_tree = nullptr;
 
@@ -150,21 +153,42 @@ private:
 	EditorProfiler *profiler = nullptr;
 	EditorVisualProfiler *visual_profiler = nullptr;
 	EditorPerformanceProfiler *performance_profiler = nullptr;
+	EditorExpressionEvaluator *expression_evaluator = nullptr;
 
 	OS::ProcessID remote_pid = 0;
-	bool breaked = false;
-	bool can_debug = false;
 	bool move_to_foreground = true;
 	bool can_request_idle_draw = false;
 
 	bool live_debug;
+
+	uint64_t debugging_thread_id = Thread::UNASSIGNED_ID;
+
+	struct ThreadDebugged {
+		String name;
+		String error;
+		bool can_debug = false;
+		bool has_stackdump = false;
+		uint32_t debug_order = 0;
+		uint64_t thread_id = Thread::UNASSIGNED_ID; // for order
+	};
+
+	struct ThreadSort {
+		bool operator()(const ThreadDebugged *a, const ThreadDebugged *b) const {
+			return a->debug_order < b->debug_order;
+		}
+	};
+
+	HashMap<uint64_t, ThreadDebugged> threads_debugged;
+	bool thread_list_updating = false;
+
+	void _select_thread(int p_index);
 
 	EditorDebuggerNode::CameraOverride camera_override;
 
 	void _stack_dump_frame_selected();
 
 	void _file_selected(const String &p_file);
-	void _parse_message(const String &p_msg, const Array &p_data);
+	void _parse_message(const String &p_msg, uint64_t p_thread_id, const Array &p_data);
 	void _set_reason_text(const String &p_reason, MessageType p_type);
 	void _update_buttons_state();
 	void _remote_object_selected(ObjectID p_object);
@@ -173,6 +197,8 @@ private:
 
 	void _video_mem_request();
 	void _video_mem_export();
+
+	void _resources_reimported(const PackedStringArray &p_resources);
 
 	int _get_node_path_cache(const NodePath &p_path);
 
@@ -200,7 +226,7 @@ private:
 	void _item_menu_id_pressed(int p_option);
 	void _tab_changed(int p_tab);
 
-	void _put_msg(String p_message, Array p_data);
+	void _put_msg(const String &p_message, const Array &p_data, uint64_t p_thread_id = Thread::MAIN_ID);
 	void _export_csv();
 
 	void _clear_execution();
@@ -212,6 +238,8 @@ private:
 	void _breakpoint_tree_clicked();
 
 	String _format_frame_text(const ScriptLanguage::StackInfo *info);
+
+	void _thread_debug_enter(uint64_t p_thread_id);
 
 protected:
 	void _notification(int p_what);
@@ -228,6 +256,8 @@ public:
 	void request_remote_tree();
 	const SceneDebuggerTree *get_remote_tree();
 
+	void request_remote_evaluate(const String &p_expression, int p_stack_frame);
+
 	void start(Ref<RemoteDebuggerPeer> p_peer);
 	void stop();
 
@@ -238,9 +268,9 @@ public:
 	void debug_step();
 	void debug_break();
 	void debug_continue();
-	bool is_breaked() const { return breaked; }
-	bool is_debuggable() const { return can_debug; }
-	bool is_session_active() { return peer.is_valid() && peer->is_peer_connected(); };
+	bool is_breaked() const { return threads_debugged.size() > 0; }
+	bool is_debuggable() const { return threads_debugged.size() > 0 && threads_debugged[debugging_thread_id].can_debug; }
+	bool is_session_active() { return peer.is_valid() && peer->is_peer_connected(); }
 	int get_remote_pid() const { return remote_pid; }
 
 	bool is_move_to_foreground() const;
@@ -276,7 +306,8 @@ public:
 
 	void update_live_edit_root();
 
-	void reload_scripts();
+	void reload_all_scripts();
+	void reload_scripts(const Vector<String> &p_script_paths);
 
 	bool is_skip_breakpoints();
 

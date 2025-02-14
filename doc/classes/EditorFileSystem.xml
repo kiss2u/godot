@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="EditorFileSystem" inherits="Node" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="EditorFileSystem" inherits="Node" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Resource filesystem, as the editor sees it.
 	</brief_description>
@@ -82,6 +82,12 @@
 			<param index="0" name="resources" type="PackedStringArray" />
 			<description>
 				Emitted if a resource is reimported.
+			</description>
+		</signal>
+		<signal name="resources_reimporting">
+			<param index="0" name="resources" type="PackedStringArray" />
+			<description>
+				Emitted before a resource is reimported.
 			</description>
 		</signal>
 		<signal name="resources_reload">

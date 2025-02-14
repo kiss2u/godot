@@ -29,6 +29,8 @@
 /**************************************************************************/
 
 #include "image_saver_tinyexr.h"
+
+#include "core/io/file_access.h"
 #include "core/math/math_funcs.h"
 
 #include <zlib.h> // Should come before including tinyexr.

@@ -56,6 +56,16 @@ public:
 	};
 
 	struct ShaderData {
+		enum BlendMode {
+			BLEND_MODE_MIX,
+			BLEND_MODE_ADD,
+			BLEND_MODE_SUB,
+			BLEND_MODE_MUL,
+			BLEND_MODE_ALPHA_TO_COVERAGE,
+			BLEND_MODE_PREMULTIPLIED_ALPHA,
+			BLEND_MODE_DISABLED
+		};
+
 		String path;
 		HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> uniforms;
 		HashMap<StringName, HashMap<int, RID>> default_texture_params;
@@ -73,12 +83,15 @@ public:
 		virtual RS::ShaderNativeSourceCode get_native_source_code() const { return RS::ShaderNativeSourceCode(); }
 
 		virtual ~ShaderData() {}
+
+		static RD::PipelineColorBlendState::Attachment blend_mode_to_blend_attachment(BlendMode p_mode);
+		static bool blend_mode_uses_blend_alpha(BlendMode p_mode);
 	};
 
 	struct MaterialData {
 		Vector<RendererRD::TextureStorage::RenderTarget *> render_target_cache;
 		void update_uniform_buffer(const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &p_uniforms, const uint32_t *p_uniform_offsets, const HashMap<StringName, Variant> &p_parameters, uint8_t *p_buffer, uint32_t p_buffer_size, bool p_use_linear_color);
-		void update_textures(const HashMap<StringName, Variant> &p_parameters, const HashMap<StringName, HashMap<int, RID>> &p_default_textures, const Vector<ShaderCompiler::GeneratedCode::Texture> &p_texture_uniforms, RID *p_textures, bool p_use_linear_color);
+		void update_textures(const HashMap<StringName, Variant> &p_parameters, const HashMap<StringName, HashMap<int, RID>> &p_default_textures, const Vector<ShaderCompiler::GeneratedCode::Texture> &p_texture_uniforms, RID *p_textures, bool p_use_linear_color, bool p_3d_material);
 		void set_as_used();
 
 		virtual void set_render_priority(int p_priority) = 0;
@@ -87,7 +100,7 @@ public:
 		virtual ~MaterialData();
 
 		//to be used internally by update_parameters, in the most common configuration of material parameters
-		bool update_parameters_uniform_set(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty, const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &p_uniforms, const uint32_t *p_uniform_offsets, const Vector<ShaderCompiler::GeneratedCode::Texture> &p_texture_uniforms, const HashMap<StringName, HashMap<int, RID>> &p_default_texture_params, uint32_t p_ubo_size, RID &uniform_set, RID p_shader, uint32_t p_shader_uniform_set, bool p_use_linear_color, uint32_t p_barrier = RD::BARRIER_MASK_ALL_BARRIERS);
+		bool update_parameters_uniform_set(const HashMap<StringName, Variant> &p_parameters, bool p_uniform_dirty, bool p_textures_dirty, const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &p_uniforms, const uint32_t *p_uniform_offsets, const Vector<ShaderCompiler::GeneratedCode::Texture> &p_texture_uniforms, const HashMap<StringName, HashMap<int, RID>> &p_default_texture_params, uint32_t p_ubo_size, RID &r_uniform_set, RID p_shader, uint32_t p_shader_uniform_set, bool p_use_linear_color, bool p_3d_material);
 		void free_parameters_uniform_set(RID p_uniform_set);
 
 	private:
@@ -100,9 +113,25 @@ public:
 		HashMap<StringName, uint64_t> used_global_textures;
 
 		//internally by update_parameters_uniform_set
-		Vector<uint8_t> ubo_data;
-		RID uniform_buffer;
+		Vector<uint8_t> ubo_data[2]; // 0: linear buffer; 1: sRGB buffer.
+		RID uniform_buffer[2]; // 0: linear buffer; 1: sRGB buffer.
 		Vector<RID> texture_cache;
+	};
+
+	struct Samplers {
+		RID rids[RS::CANVAS_ITEM_TEXTURE_FILTER_MAX][RS::CANVAS_ITEM_TEXTURE_REPEAT_MAX];
+		float mipmap_bias = 0.0f;
+		bool use_nearest_mipmap_filter = false;
+		int anisotropic_filtering_level = 2;
+
+		_FORCE_INLINE_ RID get_sampler(RS::CanvasItemTextureFilter p_filter, RS::CanvasItemTextureRepeat p_repeat) const {
+			return rids[p_filter][p_repeat];
+		}
+
+		template <typename Collection>
+		void append_uniforms(Collection &p_uniforms, int p_first_index) const;
+		bool is_valid() const;
+		bool is_null() const;
 	};
 
 private:
@@ -110,8 +139,7 @@ private:
 
 	/* Samplers */
 
-	RID default_rd_samplers[RS::CANVAS_ITEM_TEXTURE_FILTER_MAX][RS::CANVAS_ITEM_TEXTURE_REPEAT_MAX];
-	RID custom_rd_samplers[RS::CANVAS_ITEM_TEXTURE_FILTER_MAX][RS::CANVAS_ITEM_TEXTURE_REPEAT_MAX];
+	Samplers default_samplers;
 
 	/* Buffers */
 
@@ -227,9 +255,10 @@ private:
 
 	MaterialDataRequestFunction material_data_request_func[SHADER_TYPE_MAX];
 	mutable RID_Owner<Material, true> material_owner;
-	Material *get_material(RID p_rid) { return material_owner.get_or_null(p_rid); };
+	Material *get_material(RID p_rid) { return material_owner.get_or_null(p_rid); }
 
 	SelfList<Material>::List material_update_list;
+	Mutex material_update_list_mutex;
 
 	static void _material_uniform_set_erased(void *p_material);
 
@@ -335,16 +364,16 @@ public:
 
 	/* Samplers */
 
+	Samplers samplers_rd_allocate(float p_mipmap_bias = 0.0f, RS::ViewportAnisotropicFiltering anisotropic_filtering_level = RS::ViewportAnisotropicFiltering::VIEWPORT_ANISOTROPY_4X) const;
+	void samplers_rd_free(Samplers &p_samplers) const;
+
 	_FORCE_INLINE_ RID sampler_rd_get_default(RS::CanvasItemTextureFilter p_filter, RS::CanvasItemTextureRepeat p_repeat) {
-		return default_rd_samplers[p_filter][p_repeat];
-	}
-	_FORCE_INLINE_ RID sampler_rd_get_custom(RS::CanvasItemTextureFilter p_filter, RS::CanvasItemTextureRepeat p_repeat) {
-		return custom_rd_samplers[p_filter][p_repeat];
+		return default_samplers.get_sampler(p_filter, p_repeat);
 	}
 
-	void sampler_rd_configure_custom(float mipmap_bias);
-
-	// void sampler_rd_set_default(float p_mipmap_bias);
+	_FORCE_INLINE_ const Samplers &samplers_rd_get_default() const {
+		return default_samplers;
+	}
 
 	/* Buffers */
 
@@ -375,7 +404,7 @@ public:
 
 	/* SHADER API */
 
-	bool owns_shader(RID p_rid) { return shader_owner.owns(p_rid); };
+	bool owns_shader(RID p_rid) { return shader_owner.owns(p_rid); }
 
 	virtual RID shader_allocate() override;
 	virtual void shader_initialize(RID p_shader) override;
@@ -395,7 +424,7 @@ public:
 
 	/* MATERIAL API */
 
-	bool owns_material(RID p_rid) { return material_owner.owns(p_rid); };
+	bool owns_material(RID p_rid) { return material_owner.owns(p_rid); }
 
 	void _material_queue_update(Material *material, bool p_uniform, bool p_texture);
 	void _update_queued_materials();
@@ -415,6 +444,7 @@ public:
 
 	virtual bool material_is_animated(RID p_material) override;
 	virtual bool material_casts_shadows(RID p_material) override;
+	virtual RS::CullMode material_get_cull_mode(RID p_material) const override;
 
 	virtual void material_get_instance_shader_parameters(RID p_material, List<InstanceShaderParam> *r_parameters) override;
 

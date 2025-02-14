@@ -33,6 +33,7 @@
 #include "core/math/geometry_2d.h"
 #include "core/math/vector2.h"
 #include "core/math/vector2i.h"
+#include "scene/resources/bit_map.h"
 
 void EditorAtlasPacker::chart_pack(Vector<Chart> &charts, int &r_width, int &r_height, int p_atlas_max_size, int p_cell_resolution) {
 	int divide_by = MIN(64, p_cell_resolution);
@@ -59,7 +60,7 @@ void EditorAtlasPacker::chart_pack(Vector<Chart> &charts, int &r_width, int &r_h
 
 		Ref<BitMap> src_bitmap;
 		src_bitmap.instantiate();
-		src_bitmap->create(aabb.size / divide_by);
+		src_bitmap->create((aabb.size + Vector2(divide_by - 1, divide_by - 1)) / divide_by);
 
 		int w = src_bitmap->get_size().width;
 		int h = src_bitmap->get_size().height;
@@ -72,8 +73,7 @@ void EditorAtlasPacker::chart_pack(Vector<Chart> &charts, int &r_width, int &r_h
 				Vector2 vtx = chart.vertices[chart.faces[j].vertex[k]];
 				vtx -= aabb.position;
 				vtx /= divide_by;
-				vtx.x = MIN(vtx.x, w - 1);
-				vtx.y = MIN(vtx.y, h - 1);
+				vtx = vtx.min(Vector2(w - 1, h - 1));
 				v[k] = vtx;
 			}
 

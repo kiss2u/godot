@@ -34,7 +34,6 @@
 #include "scene/gui/control.h"
 #include "scene/resources/video_stream.h"
 #include "servers/audio/audio_rb_resampler.h"
-#include "servers/audio_server.h"
 
 class VideoStreamPlayer : public Control {
 	GDCLASS(VideoStreamPlayer, Control);
@@ -52,7 +51,7 @@ class VideoStreamPlayer : public Control {
 
 	RID stream_rid;
 
-	Ref<ImageTexture> texture;
+	Ref<Texture2D> texture;
 
 	AudioRBResampler resampler;
 	Vector<AudioFrame> mix_buffer;
@@ -65,6 +64,7 @@ class VideoStreamPlayer : public Control {
 	float volume = 1.0;
 	double last_audio_time = 0.0;
 	bool expand = false;
+	bool loop = false;
 	int buffering_ms = 500;
 	int audio_track = 0;
 	int bus_index = 0;
@@ -94,6 +94,9 @@ public:
 	void stop();
 	bool is_playing() const;
 
+	void set_loop(bool p_loop);
+	bool has_loop() const;
+
 	void set_paused(bool p_paused);
 	bool is_paused() const;
 
@@ -104,6 +107,7 @@ public:
 	float get_volume_db() const;
 
 	String get_stream_name() const;
+	double get_stream_length() const;
 	double get_stream_position() const;
 	void set_stream_position(double p_position);
 

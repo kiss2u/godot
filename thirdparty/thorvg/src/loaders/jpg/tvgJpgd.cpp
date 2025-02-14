@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 - 2023 the ThorVG project. All rights reserved.
+ * Copyright (c) 2021 - 2024 the ThorVG project. All rights reserved.
 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -36,6 +36,8 @@
 #include <stdio.h>
 #include <setjmp.h>
 #include <stdint.h>
+
+#include "tvgCommon.h"
 #include "tvgJpgd.h"
 
 #ifdef _MSC_VER
@@ -70,7 +72,7 @@ enum jpgd_status
     JPGD_BAD_DHT_COUNTS = -256, JPGD_BAD_DHT_INDEX, JPGD_BAD_DHT_MARKER, JPGD_BAD_DQT_MARKER, JPGD_BAD_DQT_TABLE,
     JPGD_BAD_PRECISION, JPGD_BAD_HEIGHT, JPGD_BAD_WIDTH, JPGD_TOO_MANY_COMPONENTS,
     JPGD_BAD_SOF_LENGTH, JPGD_BAD_VARIABLE_MARKER, JPGD_BAD_DRI_LENGTH, JPGD_BAD_SOS_LENGTH,
-    JPGD_BAD_SOS_COMP_ID, JPGD_W_EXTRA_BYTES_BEFORE_MARKER, JPGD_NO_ARITHMITIC_SUPPORT, JPGD_UNEXPECTED_MARKER,
+    JPGD_BAD_SOS_COMP_ID, JPGD_W_EXTRA_BYTES_BEFORE_MARKER, JPGD_NO_ARITHMETIC_SUPPORT, JPGD_UNEXPECTED_MARKER,
     JPGD_NOT_JPEG, JPGD_UNSUPPORTED_MARKER, JPGD_BAD_DQT_LENGTH, JPGD_TOO_MANY_BLOCKS,
     JPGD_UNDEFINED_QUANT_TABLE, JPGD_UNDEFINED_HUFF_TABLE, JPGD_NOT_SINGLE_SCAN, JPGD_UNSUPPORTED_COLORSPACE,
     JPGD_UNSUPPORTED_SAMP_FACTORS, JPGD_DECODE_ERROR, JPGD_BAD_RESTART_MARKER, JPGD_ASSERTION_ERROR,
@@ -431,7 +433,7 @@ struct Row<1>
 {
     static void idct(int* pTemp, const jpgd_block_t* pSrc)
     {
-        const int dcval = (pSrc[0] << PASS1_BITS);
+        const int dcval = pSrc[0] * PASS1_BITS * 2;
 
         pTemp[0] = dcval;
         pTemp[1] = dcval;
@@ -1336,11 +1338,10 @@ void jpeg_decoder::read_sos_marker()
 // Finds the next marker.
 int jpeg_decoder::next_marker()
 {
-    uint32_t c, bytes = 0;
+    uint32_t c;
 
     do {
         do {
-            bytes++;
             c = get_bits(8);
         } while (c != 0xFF);
 
@@ -1349,7 +1350,6 @@ int jpeg_decoder::next_marker()
         } while (c == 0xFF);
     } while (c == 0);
 
-    // If bytes > 0 here, there where extra bytes before the marker (not good).
     return c;
 }
 
@@ -1384,9 +1384,9 @@ int jpeg_decoder::process_markers()
                 read_dht_marker();
                 break;
             }
-            // No arithmitic support - dumb patents!
+            // No arithmetic support - dumb patents!
             case M_DAC: {
-                stop_decoding(JPGD_NO_ARITHMITIC_SUPPORT);
+                stop_decoding(JPGD_NO_ARITHMETIC_SUPPORT);
                 break;
             }
             case M_DQT: {
@@ -1458,14 +1458,18 @@ void jpeg_decoder::locate_sof_marker()
     int c = process_markers();
 
     switch (c) {
-        case M_SOF2: m_progressive_flag = true;
+        case M_SOF2: {
+            m_progressive_flag = true;
+            read_sof_marker();
+            break;
+        }
         case M_SOF0:  /* baseline DCT */
         case M_SOF1: { /* extended sequential DCT */
           read_sof_marker();
           break;
         }
-        case M_SOF9: {  /* Arithmitic coding */
-          stop_decoding(JPGD_NO_ARITHMITIC_SUPPORT);
+        case M_SOF9: {  /* Arithmetic coding */
+          stop_decoding(JPGD_NO_ARITHMETIC_SUPPORT);
           break;
         }
         default: {
@@ -1736,7 +1740,8 @@ void jpeg_decoder::transform_mcu_expand(int mcu_row)
                 DCT_Upsample::R_S<8, 8>::calc(R, S, pSrc_ptr);
                 break;
             default:
-                JPGD_ASSERT(false);
+                TVGERR("JPG", "invalid transform_mcu_expand");
+                return;
         }
         DCT_Upsample::Matrix44 a(P + Q); P -= Q;
         DCT_Upsample::Matrix44& b = P;
@@ -1770,7 +1775,7 @@ void jpeg_decoder::load_next_row()
     int i;
     jpgd_block_t *p;
     jpgd_quant_t *q;
-    int mcu_row, mcu_block, row_block = 0;
+    int mcu_row, mcu_block;
     int component_num, component_id;
     int block_x_mcu[JPGD_MAX_COMPONENTS];
 
@@ -1801,8 +1806,6 @@ void jpeg_decoder::load_next_row()
                 }
             }
 
-            row_block++;
-
             if (m_comps_in_scan == 1) block_x_mcu[component_id]++;
             else {
                 if (++block_x_mcu_ofs == m_comp_h_samp[component_id]) block_x_mcu_ofs = 0;
@@ -1831,7 +1834,7 @@ void jpeg_decoder::process_restart()
     int i;
     int c = 0;
 
-    // Align to a byte boundry
+    // Align to a byte boundary
     // FIXME: Is this really necessary? get_bits_no_markers() never reads in markers!
     //get_bits_no_markers(m_bits_left & 7);
 
@@ -1873,8 +1876,6 @@ static inline int dequantize_ac(int c, int q)
 // Decodes and dequantizes the next row of coefficients.
 void jpeg_decoder::decode_next_row()
 {
-    int row_block = 0;
-
     for (int mcu_row = 0; mcu_row < m_mcus_per_row; mcu_row++) {
         if ((m_restart_interval) && (m_restarts_left == 0)) process_restart();
 
@@ -1937,7 +1938,6 @@ void jpeg_decoder::decode_next_row()
             }
 
             m_mcu_block_max_zag[mcu_block] = k;
-            row_block++;
         }
         if (m_freq_domain_chroma_upsample) transform_mcu_expand(mcu_row);
         else transform_mcu(mcu_row);
@@ -2928,10 +2928,14 @@ jpeg_decoder* jpgdHeader(const char* data, int size, int* width, int* height)
 jpeg_decoder* jpgdHeader(const char* filename, int* width, int* height)
 {
     auto fileStream = new jpeg_decoder_file_stream();
-    if (!fileStream->open(filename)) return nullptr;
+    if (!fileStream->open(filename)) {
+        delete(fileStream);
+        return nullptr;
+    }
 
     auto decoder = new jpeg_decoder(fileStream);
     if (decoder->get_error_code() != JPGD_SUCCESS) {
+        delete(fileStream);
         delete(decoder);
         return nullptr;
     }

@@ -35,7 +35,7 @@ TTS_Windows *TTS_Windows::singleton = nullptr;
 void __stdcall TTS_Windows::speech_event_callback(WPARAM wParam, LPARAM lParam) {
 	TTS_Windows *tts = TTS_Windows::get_singleton();
 	SPEVENT event;
-	while (tts->synth->GetEvents(1, &event, NULL) == S_OK) {
+	while (tts->synth->GetEvents(1, &event, nullptr) == S_OK) {
 		uint32_t stream_num = (uint32_t)event.ulStreamNum;
 		if (tts->ids.has(stream_num)) {
 			if (event.eEventId == SPEI_START_INPUT_STREAM) {
@@ -43,7 +43,7 @@ void __stdcall TTS_Windows::speech_event_callback(WPARAM wParam, LPARAM lParam) 
 			} else if (event.eEventId == SPEI_END_INPUT_STREAM) {
 				DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_ENDED, tts->ids[stream_num].id);
 				tts->ids.erase(stream_num);
-				tts->_update_tts();
+				tts->update_requested = true;
 			} else if (event.eEventId == SPEI_WORD_BOUNDARY) {
 				const Char16String &string = tts->ids[stream_num].string;
 				int pos = 0;
@@ -60,8 +60,8 @@ void __stdcall TTS_Windows::speech_event_callback(WPARAM wParam, LPARAM lParam) 
 	}
 }
 
-void TTS_Windows::_update_tts() {
-	if (!is_speaking() && !paused && queue.size() > 0) {
+void TTS_Windows::process_events() {
+	if (update_requested && !paused && queue.size() > 0 && !is_speaking()) {
 		DisplayServer::TTSUtterance &message = queue.front()->get();
 
 		String text;
@@ -82,7 +82,7 @@ void TTS_Windows::_update_tts() {
 				if (SUCCEEDED(hr)) {
 					hr = cpEnum->GetCount(&ulCount);
 					while (SUCCEEDED(hr) && ulCount--) {
-						wchar_t *w_id = 0L;
+						wchar_t *w_id = nullptr;
 						hr = cpEnum->Next(1, &cpVoiceToken, nullptr);
 						cpVoiceToken->GetId(&w_id);
 						if (String::utf16((const char16_t *)w_id) == message.voice) {
@@ -110,11 +110,13 @@ void TTS_Windows::_update_tts() {
 		ids[(uint32_t)stream_number] = ut;
 
 		queue.pop_front();
+
+		update_requested = false;
 	}
 }
 
 bool TTS_Windows::is_speaking() const {
-	ERR_FAIL_COND_V(!synth, false);
+	ERR_FAIL_NULL_V(synth, false);
 
 	SPVOICESTATUS status;
 	synth->GetStatus(&status, nullptr);
@@ -122,7 +124,7 @@ bool TTS_Windows::is_speaking() const {
 }
 
 bool TTS_Windows::is_paused() const {
-	ERR_FAIL_COND_V(!synth, false);
+	ERR_FAIL_NULL_V(synth, false);
 	return paused;
 }
 
@@ -185,7 +187,7 @@ Array TTS_Windows::get_voices() const {
 }
 
 void TTS_Windows::speak(const String &p_text, const String &p_voice, int p_volume, float p_pitch, float p_rate, int p_utterance_id, bool p_interrupt) {
-	ERR_FAIL_COND(!synth);
+	ERR_FAIL_NULL(synth);
 	if (p_interrupt) {
 		stop();
 	}
@@ -207,12 +209,12 @@ void TTS_Windows::speak(const String &p_text, const String &p_voice, int p_volum
 	if (is_paused()) {
 		resume();
 	} else {
-		_update_tts();
+		update_requested = true;
 	}
 }
 
 void TTS_Windows::pause() {
-	ERR_FAIL_COND(!synth);
+	ERR_FAIL_NULL(synth);
 	if (!paused) {
 		if (synth->Pause() == S_OK) {
 			paused = true;
@@ -221,13 +223,13 @@ void TTS_Windows::pause() {
 }
 
 void TTS_Windows::resume() {
-	ERR_FAIL_COND(!synth);
+	ERR_FAIL_NULL(synth);
 	synth->Resume();
 	paused = false;
 }
 
 void TTS_Windows::stop() {
-	ERR_FAIL_COND(!synth);
+	ERR_FAIL_NULL(synth);
 
 	SPVOICESTATUS status;
 	synth->GetStatus(&status, nullptr);

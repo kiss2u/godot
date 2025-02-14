@@ -31,22 +31,26 @@
 #ifndef BINDINGS_GENERATOR_H
 #define BINDINGS_GENERATOR_H
 
-#include "core/doc_data.h"
-#include "core/object/class_db.h"
-#include "core/string/string_builder.h"
-#include "editor/doc_tools.h"
-#include "editor/editor_help.h"
+#include "core/typedefs.h" // DEBUG_METHODS_ENABLED
 
 #if defined(DEBUG_METHODS_ENABLED) && defined(TOOLS_ENABLED)
 
+#include "core/doc_data.h"
+#include "core/object/class_db.h"
+#include "core/string/string_builder.h"
 #include "core/string/ustring.h"
+#include "editor/doc_tools.h"
+#include "editor/editor_help.h"
 
 class BindingsGenerator {
 	struct ConstantInterface {
 		String name;
 		String proxy_name;
 		int64_t value = 0;
-		const DocData::ConstantDoc *const_doc;
+		const DocData::ConstantDoc *const_doc = nullptr;
+
+		bool is_deprecated = false;
+		String deprecation_message;
 
 		ConstantInterface() {}
 
@@ -59,6 +63,7 @@ class BindingsGenerator {
 
 	struct EnumInterface {
 		StringName cname;
+		String proxy_name;
 		List<ConstantInterface> constants;
 		bool is_flags = false;
 
@@ -68,8 +73,10 @@ class BindingsGenerator {
 
 		EnumInterface() {}
 
-		EnumInterface(const StringName &p_cname) {
+		EnumInterface(const StringName &p_cname, const String &p_proxy_name, bool p_is_flags) {
 			cname = p_cname;
+			proxy_name = p_proxy_name;
+			is_flags = p_is_flags;
 		}
 	};
 
@@ -81,7 +88,18 @@ class BindingsGenerator {
 		StringName setter;
 		StringName getter;
 
+		/**
+		 * Determines if the property will be hidden with the [EditorBrowsable(EditorBrowsableState.Never)]
+		 * attribute.
+		 * We do this for propertyies that have the PROPERTY_USAGE_INTERNAL flag, because they are not meant
+		 * to be exposed to scripting but we can't remove them to prevent breaking compatibility.
+		 */
+		bool is_hidden = false;
+
 		const DocData::PropertyDoc *prop_doc;
+
+		bool is_deprecated = false;
+		String deprecation_message;
 	};
 
 	struct TypeReference {
@@ -130,6 +148,11 @@ class BindingsGenerator {
 		String proxy_name;
 
 		/**
+		 * Hash of the ClassDB method
+		 */
+		uint64_t hash = 0;
+
+		/**
 		 * [TypeInterface::name] of the return type
 		 */
 		TypeReference return_type;
@@ -163,6 +186,20 @@ class BindingsGenerator {
 		 * Methods that are not meant to be exposed are those that begin with underscore and are not virtual.
 		 */
 		bool is_internal = false;
+
+		/**
+		 * Determines if the method will be hidden with the [EditorBrowsable(EditorBrowsableState.Never)]
+		 * attribute.
+		 * We do this for methods that we don't want to expose but need to be public to prevent breaking
+		 * compat (i.e: methods with 'is_compat' set to true.)
+		 */
+		bool is_hidden = false;
+
+		/**
+		 * Determines if the method is a compatibility method added to avoid breaking binary compatibility.
+		 * These methods will be generated but hidden and are considered deprecated.
+		 */
+		bool is_compat = false;
 
 		List<ArgumentInterface> arguments;
 
@@ -226,7 +263,17 @@ class BindingsGenerator {
 		bool is_enum = false;
 		bool is_object_type = false;
 		bool is_singleton = false;
+		bool is_singleton_instance = false;
 		bool is_ref_counted = false;
+		bool is_span_compatible = false;
+
+		/**
+		 * Class is a singleton, but can't be declared as a static class as that would
+		 * break backwards compatibility. As such, instead of going with a static class,
+		 * we use the actual singleton pattern (private constructor with instance property),
+		 * which doesn't break compatibility.
+		 */
+		bool is_compat_singleton = false;
 
 		/**
 		 * Determines whether the native return value of this type must be disposed
@@ -402,6 +449,9 @@ class BindingsGenerator {
 		String cs_managed_to_variant;
 
 		const DocData::ClassDoc *class_doc = nullptr;
+
+		bool is_deprecated = false;
+		String deprecation_message;
 
 		List<ConstantInterface> constants;
 		List<EnumInterface> enums;
@@ -613,8 +663,10 @@ class BindingsGenerator {
 	HashMap<const MethodInterface *, const InternalCall *> method_icalls_map;
 
 	HashMap<StringName, List<StringName>> blacklisted_methods;
+	HashSet<StringName> compat_singletons;
 
 	void _initialize_blacklisted_methods();
+	void _initialize_compat_singletons();
 
 	struct NameCache {
 		StringName type_void = StaticCString::create("void");
@@ -654,7 +706,7 @@ class BindingsGenerator {
 		StringName type_Vector4i = StaticCString::create("Vector4i");
 
 		// Object not included as it must be checked for all derived classes
-		static constexpr int nullable_types_count = 18;
+		static constexpr int nullable_types_count = 19;
 		StringName nullable_types[nullable_types_count] = {
 			type_String,
 			type_StringName,
@@ -676,6 +728,7 @@ class BindingsGenerator {
 			StaticCString::create(_STR(PackedVector2Array)),
 			StaticCString::create(_STR(PackedVector3Array)),
 			StaticCString::create(_STR(PackedColorArray)),
+			StaticCString::create(_STR(PackedVector4Array)),
 		};
 
 		bool is_nullable_type(const StringName &p_type) const {
@@ -739,15 +792,28 @@ class BindingsGenerator {
 		return p_type->name;
 	}
 
-	String bbcode_to_xml(const String &p_bbcode, const TypeInterface *p_itype);
+	String bbcode_to_text(const String &p_bbcode, const TypeInterface *p_itype);
+	String bbcode_to_xml(const String &p_bbcode, const TypeInterface *p_itype, bool p_is_signal = false);
 
-	void _append_xml_method(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
-	void _append_xml_member(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
-	void _append_xml_signal(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
-	void _append_xml_enum(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
+	void _append_text_method(StringBuilder &p_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
+	void _append_text_member(StringBuilder &p_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
+	void _append_text_signal(StringBuilder &p_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
+	void _append_text_enum(StringBuilder &p_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
+	void _append_text_constant(StringBuilder &p_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
+	void _append_text_constant_in_global_scope(StringBuilder &p_output, const String &p_target_cname, const String &p_link_target);
+	void _append_text_param(StringBuilder &p_output, const String &p_link_target);
+	void _append_text_undeclared(StringBuilder &p_output, const String &p_link_target);
+
+	void _append_xml_method(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts, const TypeInterface *p_source_itype);
+	void _append_xml_member(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts, const TypeInterface *p_source_itype);
+	void _append_xml_signal(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts, const TypeInterface *p_source_itype);
+	void _append_xml_enum(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts, const TypeInterface *p_source_itype);
 	void _append_xml_constant(StringBuilder &p_xml_output, const TypeInterface *p_target_itype, const StringName &p_target_cname, const String &p_link_target, const Vector<String> &p_link_target_parts);
 	void _append_xml_constant_in_global_scope(StringBuilder &p_xml_output, const String &p_target_cname, const String &p_link_target);
+	void _append_xml_param(StringBuilder &p_xml_output, const String &p_link_target, bool p_is_signal);
 	void _append_xml_undeclared(StringBuilder &p_xml_output, const String &p_link_target);
+
+	bool _validate_api_type(const TypeInterface *p_target_itype, const TypeInterface *p_source_itype);
 
 	int _determine_enum_prefix(const EnumInterface &p_ienum);
 	void _apply_prefix_to_enum_constants(EnumInterface &p_ienum, int p_prefix_length);
@@ -755,6 +821,7 @@ class BindingsGenerator {
 	Error _populate_method_icalls_table(const TypeInterface &p_itype);
 
 	const TypeInterface *_get_type_or_null(const TypeReference &p_typeref);
+	const TypeInterface *_get_type_or_singleton_or_null(const TypeReference &p_typeref);
 
 	const String _get_generic_type_parameters(const TypeInterface &p_itype, const List<TypeReference> &p_generic_type_parameters);
 
@@ -770,10 +837,13 @@ class BindingsGenerator {
 
 	void _populate_global_constants();
 
+	bool _method_has_conflicting_signature(const MethodInterface &p_imethod, const TypeInterface &p_itype);
+	bool _method_has_conflicting_signature(const MethodInterface &p_imethod_left, const MethodInterface &p_imethod_right);
+
 	Error _generate_cs_type(const TypeInterface &itype, const String &p_output_file);
 
 	Error _generate_cs_property(const TypeInterface &p_itype, const PropertyInterface &p_iprop, StringBuilder &p_output);
-	Error _generate_cs_method(const TypeInterface &p_itype, const MethodInterface &p_imethod, int &p_method_bind_count, StringBuilder &p_output);
+	Error _generate_cs_method(const TypeInterface &p_itype, const MethodInterface &p_imethod, int &p_method_bind_count, StringBuilder &p_output, bool p_use_span);
 	Error _generate_cs_signal(const BindingsGenerator::TypeInterface &p_itype, const BindingsGenerator::SignalInterface &p_isignal, StringBuilder &p_output);
 
 	Error _generate_cs_native_calls(const InternalCall &p_icall, StringBuilder &r_output);

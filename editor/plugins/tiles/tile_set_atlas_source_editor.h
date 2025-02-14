@@ -35,7 +35,7 @@
 #include "tile_data_editors.h"
 
 #include "scene/gui/split_container.h"
-#include "scene/resources/tile_set.h"
+#include "scene/resources/2d/tile_set.h"
 
 class Popup;
 class TileSet;
@@ -66,7 +66,7 @@ public:
 
 	private:
 		Ref<TileSet> tile_set;
-		TileSetAtlasSource *tile_set_atlas_source = nullptr;
+		Ref<TileSetAtlasSource> tile_set_atlas_source;
 		int source_id = TileSet::INVALID_SOURCE;
 
 	protected:
@@ -79,8 +79,8 @@ public:
 		void set_id(int p_id);
 		int get_id() const;
 
-		void edit(Ref<TileSet> p_tile_set, TileSetAtlasSource *p_tile_set_atlas_source, int p_source_id);
-		TileSetAtlasSource *get_edited() { return tile_set_atlas_source; };
+		void edit(Ref<TileSet> p_tile_set, Ref<TileSetAtlasSource> p_tile_set_atlas_source, int p_source_id);
+		Ref<TileSetAtlasSource> get_edited() { return tile_set_atlas_source; }
 	};
 
 	// -- Proxy object for a tile, needed by the inspector --
@@ -90,8 +90,8 @@ public:
 	private:
 		TileSetAtlasSourceEditor *tiles_set_atlas_source_editor = nullptr;
 
-		TileSetAtlasSource *tile_set_atlas_source = nullptr;
-		RBSet<TileSelection> tiles = RBSet<TileSelection>();
+		Ref<TileSetAtlasSource> tile_set_atlas_source;
+		RBSet<TileSelection> tiles;
 
 	protected:
 		bool _set(const StringName &p_name, const Variant &p_value);
@@ -101,16 +101,25 @@ public:
 		static void _bind_methods();
 
 	public:
-		TileSetAtlasSource *get_edited_tile_set_atlas_source() const { return tile_set_atlas_source; };
-		RBSet<TileSelection> get_edited_tiles() const { return tiles; };
+		Ref<TileSetAtlasSource> get_edited_tile_set_atlas_source() const { return tile_set_atlas_source; }
+		RBSet<TileSelection> get_edited_tiles() const { return tiles; }
 
-		// Update the proxyed object.
-		void edit(TileSetAtlasSource *p_tile_set_atlas_source, RBSet<TileSelection> p_tiles = RBSet<TileSelection>());
+		// Update the proxied object.
+		void edit(Ref<TileSetAtlasSource> p_tile_set_atlas_source, const RBSet<TileSelection> &p_tiles = RBSet<TileSelection>());
 
 		AtlasTileProxyObject(TileSetAtlasSourceEditor *p_tiles_set_atlas_source_editor) {
 			tiles_set_atlas_source_editor = p_tiles_set_atlas_source_editor;
 		}
 	};
+
+	class TileAtlasControl : public Control {
+		TileSetAtlasSourceEditor *editor = nullptr;
+
+	public:
+		virtual CursorShape get_cursor_shape(const Point2 &p_pos) const override;
+		TileAtlasControl(TileSetAtlasSourceEditor *p_editor) { editor = p_editor; }
+	};
+	friend class TileAtlasControl;
 
 private:
 	bool read_only = false;
@@ -118,6 +127,7 @@ private:
 	Ref<TileSet> tile_set;
 	TileSetAtlasSource *tile_set_atlas_source = nullptr;
 	int tile_set_atlas_source_id = TileSet::INVALID_SOURCE;
+	Ref<Texture2D> atlas_source_texture;
 
 	bool tile_set_changed_needs_update = false;
 
@@ -143,13 +153,14 @@ private:
 	EditorInspector *tile_inspector = nullptr;
 	Label *tile_inspector_no_tile_selected_label = nullptr;
 	String selected_property;
-	void _inspector_property_selected(String p_property);
+	void _inspector_property_selected(const String &p_property);
 
 	TileSetAtlasSourceProxyObject *atlas_source_proxy_object = nullptr;
 	EditorInspector *atlas_source_inspector = nullptr;
 
 	// -- Atlas view --
 	TileAtlasView *tile_atlas_view = nullptr;
+	VBoxContainer *tile_create_help = nullptr;
 
 	// Dragging
 	enum DragType {
@@ -166,7 +177,7 @@ private:
 
 		DRAG_TYPE_MAY_POPUP_MENU,
 
-		// Warning: keep in this order.
+		// WARNING: Keep in this order.
 		DRAG_TYPE_RESIZE_TOP_LEFT,
 		DRAG_TYPE_RESIZE_TOP,
 		DRAG_TYPE_RESIZE_TOP_RIGHT,
@@ -195,6 +206,7 @@ private:
 
 		ADVANCED_AUTO_CREATE_TILES,
 		ADVANCED_AUTO_REMOVE_TILES,
+		ADVANCED_CLEANUP_TILES,
 	};
 	Vector2i menu_option_coords;
 	int menu_option_alternative = TileSetSource::INVALID_TILE_ALTERNATIVE;
@@ -212,11 +224,12 @@ private:
 	HBoxContainer *tool_settings_tile_data_toolbar_container = nullptr;
 	Button *tools_settings_erase_button = nullptr;
 	MenuButton *tool_advanced_menu_button = nullptr;
+	TextureRect *outside_tiles_warning = nullptr;
 
 	// Selection.
 	RBSet<TileSelection> selection;
 
-	void _set_selection_from_array(Array p_selection);
+	void _set_selection_from_array(const Array &p_selection);
 	Array _get_selection_as_array();
 
 	// A control on the tile atlas to draw and handle input events.
@@ -240,6 +253,7 @@ private:
 	PopupMenu *alternative_tile_popup_menu = nullptr;
 	Control *alternative_tiles_control = nullptr;
 	Control *alternative_tiles_control_unscaled = nullptr;
+	void _tile_alternatives_create_button_pressed(const Vector2i &p_atlas_coords);
 	void _tile_alternatives_control_draw();
 	void _tile_alternatives_control_unscaled_draw();
 	void _tile_alternatives_control_mouse_exited();
@@ -256,30 +270,36 @@ private:
 	void _update_manage_tile_properties_button();
 	void _update_atlas_view();
 	void _update_toolbar();
-
-	// -- input events --
-	void _unhandled_key_input(const Ref<InputEvent> &p_event);
+	void _update_buttons();
 
 	// -- Misc --
 	void _auto_create_tiles();
 	void _auto_remove_tiles();
+	void _cancel_auto_create_tiles();
 	AcceptDialog *confirm_auto_create_tiles = nullptr;
+	Vector<Ref<TileSetAtlasSource>> atlases_to_auto_create_tiles;
+	Vector2i _get_drag_offset_tile_coords(const Vector2i &p_offset) const;
+
+	void _update_source_texture();
+	void _check_outside_tiles();
+	void _cleanup_outside_tiles();
 
 	void _tile_set_changed();
-	void _tile_proxy_object_changed(String p_what);
-	void _atlas_source_proxy_object_changed(String p_what);
+	void _tile_proxy_object_changed(const String &p_what);
+	void _atlas_source_proxy_object_changed(const String &p_what);
 
-	void _undo_redo_inspector_callback(Object *p_undo_redo, Object *p_edited, String p_property, Variant p_new_value);
+	void _undo_redo_inspector_callback(Object *p_undo_redo, Object *p_edited, const String &p_property, const Variant &p_new_value);
 
 protected:
 	void _notification(int p_what);
 	static void _bind_methods();
 
+	// -- input events --
+	virtual void shortcut_input(const Ref<InputEvent> &p_event) override;
+
 public:
 	void edit(Ref<TileSet> p_tile_set, TileSetAtlasSource *p_tile_set_source, int p_source_id);
-	void init_source();
-
-	virtual CursorShape get_cursor_shape(const Point2 &p_pos) const override;
+	void init_new_atlases(const Vector<Ref<TileSetAtlasSource>> &p_atlases);
 
 	TileSetAtlasSourceEditor();
 	~TileSetAtlasSourceEditor();

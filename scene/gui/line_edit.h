@@ -69,6 +69,7 @@ public:
 		MENU_INSERT_ZWNJ,
 		MENU_INSERT_WJ,
 		MENU_INSERT_SHY,
+		MENU_EMOJI_AND_SYMBOL,
 		MENU_MAX
 	};
 
@@ -86,11 +87,14 @@ public:
 private:
 	HorizontalAlignment alignment = HORIZONTAL_ALIGNMENT_LEFT;
 
+	bool editing = false;
+	bool keep_editing_on_text_submit = false;
 	bool editable = false;
 	bool pass = false;
 	bool text_changed_dirty = false;
 
 	bool alt_start = false;
+	bool alt_start_no_hold = false;
 	uint32_t alt_code = 0;
 
 	String undo_text;
@@ -106,13 +110,15 @@ private:
 
 	bool selecting_enabled = true;
 	bool deselect_on_focus_loss_enabled = true;
+	bool drag_and_drop_selection_enabled = true;
 
 	bool context_menu_enabled = true;
+	bool emoji_menu_enabled = true;
 	PopupMenu *menu = nullptr;
 	PopupMenu *menu_dir = nullptr;
 	PopupMenu *menu_ctl = nullptr;
 
-	bool caret_mid_grapheme_enabled = true;
+	bool caret_mid_grapheme_enabled = false;
 
 	int caret_column = 0;
 	float scroll_offset = 0.0;
@@ -204,6 +210,9 @@ private:
 		float base_scale = 1.0;
 	} theme_cache;
 
+	void _close_ime_window();
+	void _update_ime_window_position();
+
 	void _clear_undo_stack();
 	void _clear_redo();
 	void _create_undo_state();
@@ -242,18 +251,31 @@ private:
 	void _move_caret_end(bool p_select);
 	void _backspace(bool p_word = false, bool p_all_to_left = false);
 	void _delete(bool p_word = false, bool p_all_to_right = false);
+	void _texture_changed();
 
 protected:
 	bool _is_over_clear_button(const Point2 &p_pos) const;
+
 	virtual void _update_theme_item_cache() override;
+
 	void _notification(int p_what);
+	void _validate_property(PropertyInfo &p_property) const;
 	static void _bind_methods();
+
 	virtual void unhandled_key_input(const Ref<InputEvent> &p_event) override;
 	virtual void gui_input(const Ref<InputEvent> &p_event) override;
 
-	void _validate_property(PropertyInfo &p_property) const;
-
 public:
+	void edit();
+	void unedit();
+	bool is_editing() const;
+	void set_keep_editing_on_text_submit(bool p_enabled);
+	bool is_editing_kept_on_text_submit() const;
+
+	bool has_ime_text() const;
+	void cancel_ime();
+	void apply_ime();
+
 	void set_horizontal_alignment(HorizontalAlignment p_alignment);
 	HorizontalAlignment get_horizontal_alignment() const;
 
@@ -268,6 +290,11 @@ public:
 	bool is_context_menu_enabled();
 	PopupMenu *get_menu() const;
 	bool is_menu_visible() const;
+
+	void show_emoji_and_symbol_picker();
+
+	void set_emoji_menu_enabled(bool p_enabled);
+	bool is_emoji_menu_enabled() const;
 
 	void select(int p_from = 0, int p_to = -1);
 	void select_all();
@@ -367,6 +394,9 @@ public:
 	void set_deselect_on_focus_loss_enabled(const bool p_enabled);
 	bool is_deselect_on_focus_loss_enabled() const;
 
+	void set_drag_and_drop_selection_enabled(const bool p_enabled);
+	bool is_drag_and_drop_selection_enabled() const;
+
 	void set_right_icon(const Ref<Texture2D> &p_icon);
 	Ref<Texture2D> get_right_icon();
 
@@ -378,6 +408,8 @@ public:
 	void clear_pending_select_all_on_focus(); // For other controls, e.g. SpinBox.
 
 	virtual bool is_text_field() const override;
+
+	PackedStringArray get_configuration_warnings() const override;
 
 	void show_virtual_keyboard();
 

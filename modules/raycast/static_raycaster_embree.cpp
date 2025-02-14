@@ -28,9 +28,9 @@
 /* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
 /**************************************************************************/
 
-#ifdef TOOLS_ENABLED
-
 #include "static_raycaster_embree.h"
+
+#ifdef TOOLS_ENABLED
 
 #ifdef __SSE2__
 #include <pmmintrin.h>
@@ -53,9 +53,12 @@ void StaticRaycasterEmbree::free() {
 }
 
 bool StaticRaycasterEmbree::intersect(Ray &r_ray) {
-	RTCIntersectContext context;
-	rtcInitIntersectContext(&context);
-	rtcIntersect1(embree_scene, &context, (RTCRayHit *)&r_ray);
+	RTCRayQueryContext context;
+	rtcInitRayQueryContext(&context);
+	RTCIntersectArguments args;
+	rtcInitIntersectArguments(&args);
+	args.context = &context;
+	rtcIntersect1(embree_scene, (RTCRayHit *)&r_ray, &args);
 	return r_ray.geomID != RTC_INVALID_GEOMETRY_ID;
 }
 

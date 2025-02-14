@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="PhysicsDirectBodyState2D" inherits="Object" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="PhysicsDirectBodyState2D" inherits="Object" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Provides direct access to a physics body in the [PhysicsServer2D].
 	</brief_description>
@@ -202,7 +202,7 @@
 		<method name="integrate_forces">
 			<return type="void" />
 			<description>
-				Calls the built-in force integration code.
+				Updates the body's linear and angular velocity by applying gravity and damping for the equivalent of one physics tick.
 			</description>
 		</method>
 		<method name="set_constant_force">

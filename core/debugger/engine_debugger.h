@@ -36,7 +36,6 @@
 #include "core/templates/hash_map.h"
 #include "core/templates/vector.h"
 #include "core/variant/array.h"
-#include "core/variant/variant.h"
 
 class RemoteDebuggerPeer;
 class ScriptDebugger;
@@ -106,9 +105,9 @@ public:
 	_FORCE_INLINE_ static EngineDebugger *get_singleton() { return singleton; }
 	_FORCE_INLINE_ static bool is_active() { return singleton != nullptr && script_debugger != nullptr; }
 
-	_FORCE_INLINE_ static ScriptDebugger *get_script_debugger() { return script_debugger; };
+	_FORCE_INLINE_ static ScriptDebugger *get_script_debugger() { return script_debugger; }
 
-	static void initialize(const String &p_uri, bool p_skip_breakpoints, Vector<String> p_breakpoints, void (*p_allow_focus_steal_fn)());
+	static void initialize(const String &p_uri, bool p_skip_breakpoints, const Vector<String> &p_breakpoints, void (*p_allow_focus_steal_fn)());
 	static void deinitialize();
 	static void register_profiler(const StringName &p_name, const Profiler &p_profiler);
 	static void unregister_profiler(const StringName &p_name);
@@ -126,7 +125,13 @@ public:
 	void profiler_enable(const StringName &p_name, bool p_enabled, const Array &p_opts = Array());
 	Error capture_parse(const StringName &p_name, const String &p_msg, const Array &p_args, bool &r_captured);
 
-	void line_poll();
+	void line_poll() {
+		// The purpose of this is just processing events every now and then when the script might get too busy otherwise bugs like infinite loops can't be caught.
+		if (unlikely(poll_every % 2048) == 0) {
+			poll_events(false);
+		}
+		poll_every++;
+	}
 
 	virtual void poll_events(bool p_is_idle) {}
 	virtual void send_message(const String &p_msg, const Array &p_data) = 0;

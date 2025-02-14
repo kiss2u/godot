@@ -4,6 +4,9 @@ using System.Collections;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Godot.NativeInterop;
+using System.Diagnostics;
+
+#nullable enable
 
 namespace Godot.Collections
 {
@@ -12,6 +15,8 @@ namespace Godot.Collections
     /// typed elements allocated in the engine in C++. Useful when
     /// interfacing with the engine.
     /// </summary>
+    [DebuggerTypeProxy(typeof(DictionaryDebugView<Variant, Variant>))]
+    [DebuggerDisplay("Count = {Count}")]
     public sealed class Dictionary :
         IDictionary<Variant, Variant>,
         IReadOnlyDictionary<Variant, Variant>,
@@ -19,7 +24,7 @@ namespace Godot.Collections
     {
         internal godot_dictionary.movable NativeValue;
 
-        private WeakReference<IDisposable> _weakReferenceToSelf;
+        private WeakReference<IDisposable>? _weakReferenceToSelf;
 
         /// <summary>
         /// Constructs a new empty <see cref="Dictionary"/>.
@@ -169,7 +174,7 @@ namespace Godot.Collections
             var keys = Array.CreateTakingOwnershipOfDisposableValue(keysArray);
 
             godot_array valuesArray;
-            NativeFuncs.godotsharp_dictionary_keys(ref self, out valuesArray);
+            NativeFuncs.godotsharp_dictionary_values(ref self, out valuesArray);
             var values = Array.CreateTakingOwnershipOfDisposableValue(valuesArray);
 
             int count = NativeFuncs.godotsharp_dictionary_count(ref self);
@@ -385,6 +390,15 @@ namespace Godot.Collections
         /// Copies the elements of this <see cref="Dictionary"/> to the given untyped
         /// <see cref="KeyValuePair{TKey, TValue}"/> array, starting at the given index.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is less than 0 or greater than the array's size.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// The destination array was not long enough.
+        /// </exception>
         /// <param name="array">The array to copy to.</param>
         /// <param name="arrayIndex">The index to start at.</param>
         void ICollection<KeyValuePair<Variant, Variant>>.CopyTo(KeyValuePair<Variant, Variant>[] array, int arrayIndex)
@@ -469,21 +483,46 @@ namespace Godot.Collections
     /// </summary>
     /// <typeparam name="TKey">The type of the dictionary's keys.</typeparam>
     /// <typeparam name="TValue">The type of the dictionary's values.</typeparam>
+    [DebuggerTypeProxy(typeof(DictionaryDebugView<,>))]
+    [DebuggerDisplay("Count = {Count}")]
+    [SuppressMessage("Design", "CA1001", MessageId = "Types that own disposable fields should be disposable",
+            Justification = "Known issue. Requires explicit refcount management to not dispose untyped collections.")]
     public class Dictionary<[MustBeVariant] TKey, [MustBeVariant] TValue> :
         IDictionary<TKey, TValue>,
         IReadOnlyDictionary<TKey, TValue>,
         IGenericGodotDictionary
     {
-        private static godot_variant ToVariantFunc(in Dictionary<TKey, TValue> godotDictionary) =>
+        private static godot_variant ToVariantFunc(scoped in Dictionary<TKey, TValue> godotDictionary) =>
             VariantUtils.CreateFromDictionary(godotDictionary);
 
         private static Dictionary<TKey, TValue> FromVariantFunc(in godot_variant variant) =>
             VariantUtils.ConvertToDictionary<TKey, TValue>(variant);
 
+        private void SetTypedForUnderlyingDictionary()
+        {
+            Marshaling.GetTypedCollectionParameterInfo<TKey>(out var keyVariantType, out var keyClassName, out var keyScriptRef);
+            Marshaling.GetTypedCollectionParameterInfo<TValue>(out var valueVariantType, out var valueClassName, out var valueScriptRef);
+
+            var self = (godot_dictionary)NativeValue;
+
+            using (keyScriptRef)
+            using (valueScriptRef)
+            {
+                NativeFuncs.godotsharp_dictionary_set_typed(
+                    ref self,
+                    (uint)keyVariantType,
+                    keyClassName,
+                    keyScriptRef,
+                    (uint)valueVariantType,
+                    valueClassName,
+                    valueScriptRef);
+            }
+        }
+
         static unsafe Dictionary()
         {
-            VariantUtils.GenericConversion<Dictionary<TKey, TValue>>.ToVariantCb = &ToVariantFunc;
-            VariantUtils.GenericConversion<Dictionary<TKey, TValue>>.FromVariantCb = &FromVariantFunc;
+            VariantUtils.GenericConversion<Dictionary<TKey, TValue>>.ToVariantCb = ToVariantFunc;
+            VariantUtils.GenericConversion<Dictionary<TKey, TValue>>.FromVariantCb = FromVariantFunc;
         }
 
         private readonly Dictionary _underlyingDict;
@@ -499,22 +538,27 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a new empty <see cref="Dictionary{TKey, TValue}"/>.
         /// </summary>
+        /// <returns>A new Godot Dictionary.</returns>
         public Dictionary()
         {
             _underlyingDict = new Dictionary();
+            SetTypedForUnderlyingDictionary();
         }
 
         /// <summary>
         /// Constructs a new <see cref="Dictionary{TKey, TValue}"/> from the given dictionary's elements.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="dictionary"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="dictionary">The dictionary to construct from.</param>
         /// <returns>A new Godot Dictionary.</returns>
         public Dictionary(IDictionary<TKey, TValue> dictionary)
         {
-            if (dictionary == null)
-                throw new ArgumentNullException(nameof(dictionary));
+            ArgumentNullException.ThrowIfNull(dictionary);
 
             _underlyingDict = new Dictionary();
+            SetTypedForUnderlyingDictionary();
 
             foreach (KeyValuePair<TKey, TValue> entry in dictionary)
                 Add(entry.Key, entry.Value);
@@ -523,10 +567,15 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a new <see cref="Dictionary{TKey, TValue}"/> from the given dictionary's elements.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="dictionary"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="dictionary">The dictionary to construct from.</param>
         /// <returns>A new Godot Dictionary.</returns>
         public Dictionary(Dictionary dictionary)
         {
+            ArgumentNullException.ThrowIfNull(dictionary);
+
             _underlyingDict = dictionary;
         }
 
@@ -539,7 +588,9 @@ namespace Godot.Collections
         /// Converts this typed <see cref="Dictionary{TKey, TValue}"/> to an untyped <see cref="Dictionary"/>.
         /// </summary>
         /// <param name="from">The typed dictionary to convert.</param>
-        public static explicit operator Dictionary(Dictionary<TKey, TValue> from)
+        /// <returns>A new Godot Dictionary, or <see langword="null"/> if <see paramref="from"/> was null.</returns>
+        [return: NotNullIfNotNull("from")]
+        public static explicit operator Dictionary?(Dictionary<TKey, TValue>? from)
         {
             return from?._underlyingDict;
         }
@@ -555,6 +606,8 @@ namespace Godot.Collections
         /// elements will be shallow copied regardless of the <paramref name="deep"/>
         /// setting.
         /// </summary>
+        /// <param name="deep">If <see langword="true"/>, performs a deep copy.</param>
+        /// <returns>A new Godot Dictionary.</returns>
         public Dictionary<TKey, TValue> Duplicate(bool deep = false)
         {
             return new Dictionary<TKey, TValue>(_underlyingDict.Duplicate(deep));
@@ -688,6 +741,9 @@ namespace Godot.Collections
         /// <exception cref="InvalidOperationException">
         /// The dictionary is read-only.
         /// </exception>
+        /// <exception cref="ArgumentException">
+        /// An element with the same <paramref name="key"/> already exists.
+        /// </exception>
         /// <param name="key">The key at which to add the object.</param>
         /// <param name="value">The object to add.</param>
         public void Add(TKey key, TValue value)
@@ -810,6 +866,15 @@ namespace Godot.Collections
         /// Copies the elements of this <see cref="Dictionary{TKey, TValue}"/> to the given
         /// untyped C# array, starting at the given index.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="arrayIndex"/> is less than 0 or greater than the array's size.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// The destination array was not long enough.
+        /// </exception>
         /// <param name="array">The array to copy to.</param>
         /// <param name="arrayIndex">The index to start at.</param>
         void ICollection<KeyValuePair<TKey, TValue>>.CopyTo(KeyValuePair<TKey, TValue>[] array, int arrayIndex)

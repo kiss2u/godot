@@ -33,6 +33,8 @@
 
 #include "servers/display_server.h"
 
+#include "godot_js.h"
+
 #include <emscripten.h>
 #include <emscripten/html5.h>
 
@@ -80,36 +82,80 @@ private:
 	uint64_t last_click_ms = 0;
 	MouseButton last_click_button_index = MouseButton::NONE;
 
+	bool ime_active = false;
+	bool ime_started = false;
+	String ime_text;
+	Vector2i ime_selection;
+
+	struct KeyEvent {
+		bool pressed = false;
+		bool echo = false;
+		bool raw = false;
+		Key keycode = Key::NONE;
+		Key physical_keycode = Key::NONE;
+		Key key_label = Key::NONE;
+		uint32_t unicode = 0;
+		KeyLocation location = KeyLocation::UNSPECIFIED;
+		int mod = 0;
+	};
+
+	Vector<KeyEvent> key_event_buffer;
+	int key_event_pos = 0;
+
 	bool swap_cancel_ok = false;
 	bool tts = false;
+	NativeMenu *native_menu = nullptr;
+
+	MouseMode mouse_mode_base = MOUSE_MODE_VISIBLE;
+	MouseMode mouse_mode_override = MOUSE_MODE_VISIBLE;
+	bool mouse_mode_override_enabled = false;
+	void _mouse_update_mode();
 
 	// utilities
 	static void dom2godot_mod(Ref<InputEventWithModifiers> ev, int p_mod, Key p_keycode);
 	static const char *godot2dom_cursor(DisplayServer::CursorShape p_shape);
 
 	// events
-	static void fullscreen_change_callback(int p_fullscreen);
-	static int mouse_button_callback(int p_pressed, int p_button, double p_x, double p_y, int p_modifiers);
-	static void mouse_move_callback(double p_x, double p_y, double p_rel_x, double p_rel_y, int p_modifiers);
-	static int mouse_wheel_callback(double p_delta_x, double p_delta_y);
-	static void touch_callback(int p_type, int p_count);
-	static void key_callback(int p_pressed, int p_repeat, int p_modifiers);
-	static void vk_input_text_callback(const char *p_text, int p_cursor);
-	static void gamepad_callback(int p_index, int p_connected, const char *p_id, const char *p_guid);
-	void process_joypads();
+	WASM_EXPORT static void fullscreen_change_callback(int p_fullscreen);
+	static void _fullscreen_change_callback(int p_fullscreen);
+	WASM_EXPORT static int mouse_button_callback(int p_pressed, int p_button, double p_x, double p_y, int p_modifiers);
+	static int _mouse_button_callback(int p_pressed, int p_button, double p_x, double p_y, int p_modifiers);
+	WASM_EXPORT static void mouse_move_callback(double p_x, double p_y, double p_rel_x, double p_rel_y, int p_modifiers);
+	static void _mouse_move_callback(double p_x, double p_y, double p_rel_x, double p_rel_y, int p_modifiers);
+	WASM_EXPORT static int mouse_wheel_callback(double p_delta_x, double p_delta_y);
+	static int _mouse_wheel_callback(double p_delta_x, double p_delta_y);
+	WASM_EXPORT static void touch_callback(int p_type, int p_count);
+	static void _touch_callback(int p_type, int p_count);
+	WASM_EXPORT static void key_callback(int p_pressed, int p_repeat, int p_modifiers);
+	static void _key_callback(const String &p_key_event_code, const String &p_key_event_key, int p_pressed, int p_repeat, int p_modifiers);
+	WASM_EXPORT static void vk_input_text_callback(const char *p_text, int p_cursor);
+	static void _vk_input_text_callback(const String &p_text, int p_cursor);
+	WASM_EXPORT static void gamepad_callback(int p_index, int p_connected, const char *p_id, const char *p_guid);
+	static void _gamepad_callback(int p_index, int p_connected, const String &p_id, const String &p_guid);
+	WASM_EXPORT static void js_utterance_callback(int p_event, int p_id, int p_pos);
 	static void _js_utterance_callback(int p_event, int p_id, int p_pos);
+	WASM_EXPORT static void ime_callback(int p_type, const char *p_text);
+	static void _ime_callback(int p_type, const String &p_text);
+	WASM_EXPORT static void request_quit_callback();
+	static void _request_quit_callback();
+	WASM_EXPORT static void window_blur_callback();
+	static void _window_blur_callback();
+	WASM_EXPORT static void update_voices_callback(int p_size, const char **p_voice);
+	static void _update_voices_callback(const Vector<String> &p_voices);
+	WASM_EXPORT static void update_clipboard_callback(const char *p_text);
+	static void _update_clipboard_callback(const String &p_text);
+	WASM_EXPORT static void send_window_event_callback(int p_notification);
+	static void _send_window_event_callback(int p_notification);
+	WASM_EXPORT static void drop_files_js_callback(const char **p_filev, int p_filec);
+	static void _drop_files_js_callback(const Vector<String> &p_files);
+
+	void process_joypads();
+	void process_keys();
 
 	static Vector<String> get_rendering_drivers_func();
-	static DisplayServer *create_func(const String &p_rendering_driver, WindowMode p_window_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Error &r_error);
+	static DisplayServer *create_func(const String &p_rendering_driver, WindowMode p_window_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Vector2i *p_position, const Vector2i &p_resolution, int p_screen, Context p_context, int64_t p_parent_window, Error &r_error);
 
 	static void _dispatch_input_event(const Ref<InputEvent> &p_event);
-
-	static void request_quit_callback();
-	static void window_blur_callback();
-	static void update_voices_callback(int p_size, const char **p_voice);
-	static void update_clipboard_callback(const char *p_text);
-	static void send_window_event_callback(int p_notification);
-	static void drop_files_js_callback(char **p_filev, int p_filec);
 
 protected:
 	int get_current_video_driver() const;
@@ -143,7 +189,19 @@ public:
 	// mouse
 	virtual void mouse_set_mode(MouseMode p_mode) override;
 	virtual MouseMode mouse_get_mode() const override;
+	virtual void mouse_set_mode_override(MouseMode p_mode) override;
+	virtual MouseMode mouse_get_mode_override() const override;
+	virtual void mouse_set_mode_override_enabled(bool p_override_enabled) override;
+	virtual bool mouse_is_mode_override_enabled() const override;
+
 	virtual Point2i mouse_get_position() const override;
+
+	// ime
+	virtual void window_set_ime_active(const bool p_active, WindowID p_window = MAIN_WINDOW_ID) override;
+	virtual void window_set_ime_position(const Point2i &p_pos, WindowID p_window = MAIN_WINDOW_ID) override;
+
+	virtual Point2i ime_get_selection() const override;
+	virtual String ime_get_text() const override;
 
 	// touch
 	virtual bool is_touchscreen_available() const override;
@@ -161,6 +219,7 @@ public:
 	virtual int screen_get_dpi(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
 	virtual float screen_get_scale(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
 	virtual float screen_get_refresh_rate(int p_screen = SCREEN_OF_MAIN_WINDOW) const override;
+	virtual void screen_set_keep_on(bool p_enable) override {}
 
 	virtual void virtual_keyboard_show(const String &p_existing_text, const Rect2 &p_screen_rect = Rect2(), VirtualKeyboardType p_type = KEYBOARD_TYPE_DEFAULT, int p_max_input_length = -1, int p_cursor_start = -1, int p_cursor_end = -1) override;
 	virtual void virtual_keyboard_hide() override;
@@ -211,11 +270,13 @@ public:
 
 	virtual void window_request_attention(WindowID p_window = MAIN_WINDOW_ID) override;
 	virtual void window_move_to_foreground(WindowID p_window = MAIN_WINDOW_ID) override;
+	virtual bool window_is_focused(WindowID p_window = MAIN_WINDOW_ID) const override;
 
 	virtual bool window_can_draw(WindowID p_window = MAIN_WINDOW_ID) const override;
 
 	virtual bool can_any_window_draw() const override;
 
+	virtual void window_set_vsync_mode(VSyncMode p_vsync_mode, WindowID p_window = MAIN_WINDOW_ID) override {}
 	virtual DisplayServer::VSyncMode window_get_vsync_mode(WindowID p_vsync_mode) const override;
 
 	// events
@@ -229,7 +290,7 @@ public:
 	virtual void swap_buffers() override;
 
 	static void register_web_driver();
-	DisplayServerWeb(const String &p_rendering_driver, WindowMode p_window_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Point2i *p_position, const Size2i &p_resolution, int p_screen, Error &r_error);
+	DisplayServerWeb(const String &p_rendering_driver, WindowMode p_window_mode, VSyncMode p_vsync_mode, uint32_t p_flags, const Point2i *p_position, const Size2i &p_resolution, int p_screen, Context p_context, int64_t p_parent_window, Error &r_error);
 	~DisplayServerWeb();
 };
 

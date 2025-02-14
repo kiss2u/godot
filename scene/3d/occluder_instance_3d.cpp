@@ -31,13 +31,12 @@
 #include "occluder_instance_3d.h"
 
 #include "core/config/project_settings.h"
-#include "core/core_string_names.h"
 #include "core/io/marshalls.h"
 #include "core/math/geometry_2d.h"
 #include "core/math/triangulate.h"
 #include "scene/3d/importer_mesh_instance_3d.h"
 #include "scene/3d/mesh_instance_3d.h"
-#include "scene/resources/importer_mesh.h"
+#include "scene/resources/3d/importer_mesh.h"
 #include "scene/resources/surface_tool.h"
 
 #ifdef TOOLS_ENABLED
@@ -130,9 +129,6 @@ void Occluder3D::_notification(int p_what) {
 	}
 }
 
-void Occluder3D::_bind_methods() {
-}
-
 Occluder3D::Occluder3D() {
 	occluder = RS::get_singleton()->occluder_create();
 }
@@ -193,7 +189,7 @@ void QuadOccluder3D::set_size(const Size2 &p_size) {
 		return;
 	}
 
-	size = p_size.max(Size2());
+	size = p_size.maxf(0);
 	_update();
 }
 
@@ -237,7 +233,7 @@ void BoxOccluder3D::set_size(const Vector3 &p_size) {
 		return;
 	}
 
-	size = Vector3(MAX(p_size.x, 0.0f), MAX(p_size.y, 0.0f), MAX(p_size.z, 0.0f));
+	size = p_size.maxf(0);
 	_update();
 }
 
@@ -441,14 +437,14 @@ void OccluderInstance3D::set_occluder(const Ref<Occluder3D> &p_occluder) {
 	}
 
 	if (occluder.is_valid()) {
-		occluder->disconnect(CoreStringNames::get_singleton()->changed, callable_mp(this, &OccluderInstance3D::_occluder_changed));
+		occluder->disconnect_changed(callable_mp(this, &OccluderInstance3D::_occluder_changed));
 	}
 
 	occluder = p_occluder;
 
 	if (occluder.is_valid()) {
 		set_base(occluder->get_rid());
-		occluder->connect(CoreStringNames::get_singleton()->changed, callable_mp(this, &OccluderInstance3D::_occluder_changed));
+		occluder->connect_changed(callable_mp(this, &OccluderInstance3D::_occluder_changed));
 	} else {
 		set_base(RID());
 	}
@@ -459,7 +455,7 @@ void OccluderInstance3D::set_occluder(const Ref<Occluder3D> &p_occluder) {
 #ifdef TOOLS_ENABLED
 	// PolygonOccluder3D is edited via an editor plugin, this ensures the plugin is shown/hidden when necessary
 	if (Engine::get_singleton()->is_editor_hint()) {
-		EditorNode::get_singleton()->call_deferred(SNAME("edit_current"));
+		callable_mp(EditorNode::get_singleton(), &EditorNode::edit_current).call_deferred();
 	}
 #endif
 }
@@ -695,7 +691,7 @@ OccluderInstance3D::BakeError OccluderInstance3D::bake_scene(Node *p_from_node, 
 }
 
 PackedStringArray OccluderInstance3D::get_configuration_warnings() const {
-	PackedStringArray warnings = Node::get_configuration_warnings();
+	PackedStringArray warnings = VisualInstance3D::get_configuration_warnings();
 
 	if (!bool(GLOBAL_GET("rendering/occlusion_culling/use_occlusion_culling"))) {
 		warnings.push_back(RTR("Occlusion culling is disabled in the Project Settings, which means occlusion culling won't be performed in the root viewport.\nTo resolve this, open the Project Settings and enable Rendering > Occlusion Culling > Use Occlusion Culling."));

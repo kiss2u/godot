@@ -33,6 +33,8 @@
 
 #include "core/string/ustring.h"
 
+// Keep the values in this enum in sync with `_keycodes` in `keyboard.cpp`,
+// and the bindings in `core_constants.cpp`.
 enum class Key {
 	NONE = 0,
 	// Special key: The strategy here is similar to the one used by toolkits,
@@ -247,7 +249,7 @@ enum class Key {
 
 enum class KeyModifierMask {
 	CODE_MASK = ((1 << 23) - 1), ///< Apply this mask to any keycode to remove modifiers.
-	MODIFIER_MASK = (0x7F << 22), ///< Apply this mask to isolate modifiers.
+	MODIFIER_MASK = (0x7F << 24), ///< Apply this mask to isolate modifiers.
 	//RESERVED = (1 << 23),
 	CMD_OR_CTRL = (1 << 24),
 	SHIFT = (1 << 25),
@@ -256,6 +258,12 @@ enum class KeyModifierMask {
 	CTRL = (1 << 28),
 	KPAD = (1 << 29),
 	GROUP_SWITCH = (1 << 30)
+};
+
+enum class KeyLocation {
+	UNSPECIFIED,
+	LEFT,
+	RIGHT
 };
 
 // To avoid having unnecessary operators, only define the ones that are needed.
@@ -330,7 +338,7 @@ constexpr KeyModifierMask operator|(KeyModifierMask a, KeyModifierMask b) {
 
 String keycode_get_string(Key p_code);
 bool keycode_has_unicode(Key p_keycode);
-Key find_keycode(const String &p_code);
+Key find_keycode(const String &p_codestr);
 const char *find_keycode_name(Key p_keycode);
 int keycode_get_count();
 int keycode_get_value_by_index(int p_index);

@@ -47,11 +47,14 @@ public:
 	virtual void particles_emit(RID p_particles, const Transform3D &p_transform, const Vector3 &p_velocity, const Color &p_color, const Color &p_custom, uint32_t p_emit_flags) override {}
 	virtual void particles_set_emitting(RID p_particles, bool p_emitting) override {}
 	virtual void particles_set_amount(RID p_particles, int p_amount) override {}
+	virtual void particles_set_amount_ratio(RID p_particles, float p_amount_ratio) override {}
 	virtual void particles_set_lifetime(RID p_particles, double p_lifetime) override {}
 	virtual void particles_set_one_shot(RID p_particles, bool p_one_shot) override {}
 	virtual void particles_set_pre_process_time(RID p_particles, double p_time) override {}
+	virtual void particles_request_process_time(RID p_particles, real_t p_request_process_time) override {}
 	virtual void particles_set_explosiveness_ratio(RID p_particles, real_t p_ratio) override {}
 	virtual void particles_set_randomness_ratio(RID p_particles, real_t p_ratio) override {}
+	virtual void particles_set_seed(RID p_particles, uint32_t p_seed) override {}
 	virtual void particles_set_custom_aabb(RID p_particles, const AABB &p_aabb) override {}
 	virtual void particles_set_speed_scale(RID p_particles, double p_scale) override {}
 	virtual void particles_set_use_local_coordinates(RID p_particles, bool p_enable) override {}
@@ -81,6 +84,8 @@ public:
 	virtual AABB particles_get_aabb(RID p_particles) const override { return AABB(); }
 
 	virtual void particles_set_emission_transform(RID p_particles, const Transform3D &p_transform) override {}
+	virtual void particles_set_emitter_velocity(RID p_particles, const Vector3 &p_velocity) override {}
+	virtual void particles_set_interp_to_end(RID p_particles, float p_interp) override {}
 
 	virtual bool particles_get_emitting(RID p_particles) override { return false; }
 	virtual int particles_get_draw_passes(RID p_particles) const override { return 0; }
@@ -109,6 +114,8 @@ public:
 	virtual void particles_collision_set_height_field_resolution(RID p_particles_collision, RS::ParticlesCollisionHeightfieldResolution p_resolution) override {}
 	virtual AABB particles_collision_get_aabb(RID p_particles_collision) const override { return AABB(); }
 	virtual bool particles_collision_is_heightfield(RID p_particles_collision) const override { return false; }
+	virtual uint32_t particles_collision_get_height_field_mask(RID p_particles_collision) const override { return 0; }
+	virtual void particles_collision_set_height_field_mask(RID p_particles_collision, uint32_t p_heightfield_mask) override {}
 
 	virtual RID particles_collision_instance_create(RID p_collision) override { return RID(); }
 	virtual void particles_collision_instance_free(RID p_rid) override {}

@@ -141,7 +141,7 @@ void SkyRD::SkyShaderData::set_code(const String &p_code) {
 	for (int i = 0; i < SKY_VERSION_MAX; i++) {
 		RD::PipelineDepthStencilState depth_stencil_state;
 		depth_stencil_state.enable_depth_test = true;
-		depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_LESS_OR_EQUAL;
+		depth_stencil_state.depth_compare_operator = RD::COMPARE_OP_GREATER_OR_EQUAL;
 
 		if (scene_singleton->sky.sky_shader.shader.is_variant_enabled(i)) {
 			RID shader_variant = scene_singleton->sky.sky_shader.shader.version_get_shader(version, i);
@@ -170,7 +170,7 @@ RS::ShaderNativeSourceCode SkyRD::SkyShaderData::get_native_source_code() const 
 
 SkyRD::SkyShaderData::~SkyShaderData() {
 	RendererSceneRenderRD *scene_singleton = static_cast<RendererSceneRenderRD *>(RendererSceneRenderRD::singleton);
-	ERR_FAIL_COND(!scene_singleton);
+	ERR_FAIL_NULL(scene_singleton);
 	//pipeline variants will clear themselves if shader is gone
 	if (version.is_valid()) {
 		scene_singleton->sky.sky_shader.shader.version_free(version);
@@ -185,7 +185,7 @@ bool SkyRD::SkyMaterialData::update_parameters(const HashMap<StringName, Variant
 
 	uniform_set_updated = true;
 
-	return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, scene_singleton->sky.sky_shader.shader.version_get_shader(shader_data->version, 0), SKY_SET_MATERIAL, true);
+	return update_parameters_uniform_set(p_parameters, p_uniform_dirty, p_textures_dirty, shader_data->uniforms, shader_data->ubo_offsets.ptr(), shader_data->texture_uniforms, shader_data->default_texture_params, shader_data->ubo_size, uniform_set, scene_singleton->sky.sky_shader.shader.version_get_shader(shader_data->version, 0), SKY_SET_MATERIAL, true, true);
 }
 
 SkyRD::SkyMaterialData::~SkyMaterialData() {
@@ -210,7 +210,7 @@ static _FORCE_INLINE_ void store_transform_3x3(const Basis &p_basis, float *p_ar
 	p_array[11] = 0;
 }
 
-void SkyRD::_render_sky(RD::DrawListID p_list, float p_time, RID p_fb, PipelineCacheRD *p_pipeline, RID p_uniform_set, RID p_texture_set, const Projection &p_projection, const Basis &p_orientation, const Vector3 &p_position, float p_luminance_multiplier) {
+void SkyRD::_render_sky(RD::DrawListID p_list, float p_time, RID p_fb, PipelineCacheRD *p_pipeline, RID p_uniform_set, RID p_texture_set, const Projection &p_projection, const Basis &p_orientation, const Vector3 &p_position, float p_luminance_multiplier, float p_brightness_multiplier) {
 	SkyPushConstant sky_push_constant;
 
 	memset(&sky_push_constant, 0, sizeof(SkyPushConstant));
@@ -226,6 +226,7 @@ void SkyRD::_render_sky(RD::DrawListID p_list, float p_time, RID p_fb, PipelineC
 	sky_push_constant.position[2] = p_position.z;
 	sky_push_constant.time = p_time;
 	sky_push_constant.luminance_multiplier = p_luminance_multiplier;
+	sky_push_constant.brightness_multiplier = p_brightness_multiplier;
 	store_transform_3x3(p_orientation, sky_push_constant.orientation);
 
 	RenderingDevice::FramebufferFormatID fb_format = RD::get_singleton()->framebuffer_get_format(p_fb);
@@ -236,24 +237,22 @@ void SkyRD::_render_sky(RD::DrawListID p_list, float p_time, RID p_fb, PipelineC
 
 	// Update uniform sets.
 	{
-		RD::get_singleton()->draw_list_bind_uniform_set(draw_list, sky_scene_state.uniform_set, 0);
+		RD::get_singleton()->draw_list_bind_uniform_set(draw_list, sky_scene_state.uniform_set, SKY_SET_UNIFORMS);
 		if (p_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(p_uniform_set)) { // Material may not have a uniform set.
-			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, p_uniform_set, 1);
+			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, p_uniform_set, SKY_SET_MATERIAL);
 		}
-		RD::get_singleton()->draw_list_bind_uniform_set(draw_list, p_texture_set, 2);
+		RD::get_singleton()->draw_list_bind_uniform_set(draw_list, p_texture_set, SKY_SET_TEXTURES);
 		// Fog uniform set can be invalidated before drawing, so validate at draw time
 		if (sky_scene_state.fog_uniform_set.is_valid() && RD::get_singleton()->uniform_set_is_valid(sky_scene_state.fog_uniform_set)) {
-			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, sky_scene_state.fog_uniform_set, 3);
+			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, sky_scene_state.fog_uniform_set, SKY_SET_FOG);
 		} else {
-			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, sky_scene_state.default_fog_uniform_set, 3);
+			RD::get_singleton()->draw_list_bind_uniform_set(draw_list, sky_scene_state.default_fog_uniform_set, SKY_SET_FOG);
 		}
 	}
 
-	RD::get_singleton()->draw_list_bind_index_array(draw_list, index_array);
-
 	RD::get_singleton()->draw_list_set_push_constant(draw_list, &sky_push_constant, sizeof(SkyPushConstant));
 
-	RD::get_singleton()->draw_list_draw(draw_list, true);
+	RD::get_singleton()->draw_list_draw(draw_list, false, 1u, 3u);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -547,7 +546,6 @@ void SkyRD::Sky::free() {
 	}
 
 	if (material.is_valid()) {
-		RSG::material_storage->material_free(material);
 		material = RID();
 	}
 }
@@ -555,7 +553,9 @@ void SkyRD::Sky::free() {
 RID SkyRD::Sky::get_textures(SkyTextureSetVersion p_version, RID p_default_shader_rd, Ref<RenderSceneBuffersRD> p_render_buffers) {
 	RendererRD::TextureStorage *texture_storage = RendererRD::TextureStorage::get_singleton();
 
-	Vector<RD::Uniform> uniforms;
+	thread_local LocalVector<RD::Uniform> uniforms;
+	uniforms.clear();
+
 	{
 		RD::Uniform u;
 		u.uniform_type = RD::UNIFORM_TYPE_TEXTURE;
@@ -704,7 +704,7 @@ RendererRD::MaterialStorage::ShaderData *SkyRD::_create_sky_shader_func() {
 RendererRD::MaterialStorage::ShaderData *SkyRD::_create_sky_shader_funcs() {
 	// !BAS! Why isn't _create_sky_shader_func not just static too?
 	return static_cast<RendererSceneRenderRD *>(RendererSceneRenderRD::singleton)->sky._create_sky_shader_func();
-};
+}
 
 RendererRD::MaterialStorage::MaterialData *SkyRD::_create_sky_material_func(SkyShaderData *p_shader) {
 	SkyMaterialData *material_data = memnew(SkyMaterialData);
@@ -716,7 +716,7 @@ RendererRD::MaterialStorage::MaterialData *SkyRD::_create_sky_material_func(SkyS
 RendererRD::MaterialStorage::MaterialData *SkyRD::_create_sky_material_funcs(RendererRD::MaterialStorage::ShaderData *p_shader) {
 	// !BAS! same here, we could just make _create_sky_material_func static?
 	return static_cast<RendererSceneRenderRD *>(RendererSceneRenderRD::singleton)->sky._create_sky_material_func(static_cast<SkyShaderData *>(p_shader));
-};
+}
 
 SkyRD::SkyRD() {
 	roughness_layers = GLOBAL_GET("rendering/reflections/sky_reflections/roughness_layers");
@@ -738,6 +738,7 @@ void SkyRD::init() {
 		sky_scene_state.directional_light_buffer = RD::get_singleton()->uniform_buffer_create(directional_light_buffer_size);
 
 		String defines = "\n#define MAX_DIRECTIONAL_LIGHT_DATA_STRUCTS " + itos(sky_scene_state.max_directional_lights) + "\n";
+		defines += "\n#define SAMPLERS_BINDING_FIRST_INDEX " + itos(SAMPLERS_BINDING_FIRST_INDEX) + "\n";
 
 		// Initialize sky
 		Vector<String> sky_modes;
@@ -806,13 +807,12 @@ void SkyRD::init() {
 		actions.renames["AT_CUBEMAP_PASS"] = "AT_CUBEMAP_PASS";
 		actions.renames["AT_HALF_RES_PASS"] = "AT_HALF_RES_PASS";
 		actions.renames["AT_QUARTER_RES_PASS"] = "AT_QUARTER_RES_PASS";
-		actions.custom_samplers["RADIANCE"] = "material_samplers[3]";
+		actions.custom_samplers["RADIANCE"] = "SAMPLER_LINEAR_WITH_MIPMAPS_CLAMP";
 		actions.usage_defines["HALF_RES_COLOR"] = "\n#define USES_HALF_RES_COLOR\n";
 		actions.usage_defines["QUARTER_RES_COLOR"] = "\n#define USES_QUARTER_RES_COLOR\n";
 		actions.render_mode_defines["disable_fog"] = "#define DISABLE_FOG\n";
 		actions.render_mode_defines["use_debanding"] = "#define USE_DEBANDING\n";
 
-		actions.sampler_array_name = "material_samplers";
 		actions.base_texture_binding_index = 1;
 		actions.texture_layout_set = 1;
 		actions.base_uniform_string = "material.";
@@ -853,28 +853,6 @@ void sky() {
 		Vector<RD::Uniform> uniforms;
 
 		{
-			Vector<RID> ids;
-			ids.resize(12);
-			RID *ids_ptr = ids.ptrw();
-			ids_ptr[0] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-			ids_ptr[1] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-			ids_ptr[2] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-			ids_ptr[3] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-			ids_ptr[4] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS_ANISOTROPIC, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-			ids_ptr[5] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC, RS::CANVAS_ITEM_TEXTURE_REPEAT_DISABLED);
-			ids_ptr[6] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
-			ids_ptr[7] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
-			ids_ptr[8] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
-			ids_ptr[9] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
-			ids_ptr[10] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_NEAREST_WITH_MIPMAPS_ANISOTROPIC, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
-			ids_ptr[11] = material_storage->sampler_rd_get_default(RS::CANVAS_ITEM_TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC, RS::CANVAS_ITEM_TEXTURE_REPEAT_ENABLED);
-
-			RD::Uniform u(RD::UNIFORM_TYPE_SAMPLER, 0, ids);
-
-			uniforms.push_back(u);
-		}
-
-		{
 			RD::Uniform u;
 			u.uniform_type = RD::UNIFORM_TYPE_STORAGE_BUFFER;
 			u.binding = 1;
@@ -897,6 +875,8 @@ void sky() {
 			u.append_id(sky_scene_state.directional_light_buffer);
 			uniforms.push_back(u);
 		}
+
+		material_storage->samplers_rd_get_default().append_uniforms(uniforms, SAMPLERS_BINDING_FIRST_INDEX);
 
 		sky_scene_state.uniform_set = RD::get_singleton()->uniform_set_create(uniforms, sky_shader.default_shader_rd, SKY_SET_UNIFORMS);
 	}
@@ -961,23 +941,6 @@ void sky() {
 
 		sky_scene_state.fog_only_texture_uniform_set = RD::get_singleton()->uniform_set_create(uniforms, sky_shader.default_shader_rd, SKY_SET_TEXTURES);
 	}
-
-	{ //create index array for copy shaders
-		Vector<uint8_t> pv;
-		pv.resize(6 * 4);
-		{
-			uint8_t *w = pv.ptrw();
-			int *p32 = (int *)w;
-			p32[0] = 0;
-			p32[1] = 1;
-			p32[2] = 2;
-			p32[3] = 0;
-			p32[4] = 2;
-			p32[5] = 3;
-		}
-		index_buffer = RD::get_singleton()->index_buffer_create(6, RenderingDevice::INDEX_BUFFER_FORMAT_UINT32, pv);
-		index_array = RD::get_singleton()->index_array_create(index_buffer, 0, 6);
-	}
 }
 
 void SkyRD::set_texture_format(RD::DataFormat p_texture_format) {
@@ -1010,30 +973,28 @@ SkyRD::~SkyRD() {
 	if (RD::get_singleton()->uniform_set_is_valid(sky_scene_state.fog_only_texture_uniform_set)) {
 		RD::get_singleton()->free(sky_scene_state.fog_only_texture_uniform_set);
 	}
-
-	RD::get_singleton()->free(index_buffer); //array gets freed as dependency
 }
 
-void SkyRD::setup_sky(RID p_env, Ref<RenderSceneBuffersRD> p_render_buffers, const PagedArray<RID> &p_lights, RID p_camera_attributes, uint32_t p_view_count, const Projection *p_view_projections, const Vector3 *p_view_eye_offsets, const Transform3D &p_cam_transform, const Size2i p_screen_size, RendererSceneRenderRD *p_scene_render) {
+void SkyRD::setup_sky(const RenderDataRD *p_render_data, const Size2i p_screen_size) {
 	RendererRD::LightStorage *light_storage = RendererRD::LightStorage::get_singleton();
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
-	ERR_FAIL_COND(p_env.is_null());
+	ERR_FAIL_COND(p_render_data->environment.is_null());
 
-	ERR_FAIL_COND(p_render_buffers.is_null());
+	ERR_FAIL_COND(p_render_data->render_buffers.is_null());
 
 	// make sure we support our view count
-	ERR_FAIL_COND(p_view_count == 0);
-	ERR_FAIL_COND(p_view_count > RendererSceneRender::MAX_RENDER_VIEWS);
+	ERR_FAIL_COND(p_render_data->scene_data->view_count == 0);
+	ERR_FAIL_COND(p_render_data->scene_data->view_count > RendererSceneRender::MAX_RENDER_VIEWS);
 
 	SkyMaterialData *material = nullptr;
-	Sky *sky = get_sky(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_env));
+	Sky *sky = get_sky(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_render_data->environment));
 
 	RID sky_material;
 
 	SkyShaderData *shader_data = nullptr;
 
 	if (sky) {
-		sky_material = sky_get_material(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_env));
+		sky_material = sky_get_material(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_render_data->environment));
 
 		if (sky_material.is_valid()) {
 			material = static_cast<SkyMaterialData *>(material_storage->material_get_data(sky_material, RendererRD::MaterialStorage::SHADER_TYPE_SKY));
@@ -1041,32 +1002,34 @@ void SkyRD::setup_sky(RID p_env, Ref<RenderSceneBuffersRD> p_render_buffers, con
 				material = nullptr;
 			}
 		}
+	}
 
-		if (!material) {
-			sky_material = sky_shader.default_material;
-			material = static_cast<SkyMaterialData *>(material_storage->material_get_data(sky_material, RendererRD::MaterialStorage::SHADER_TYPE_SKY));
-		}
+	if (!material) {
+		sky_material = sky_shader.default_material;
+		material = static_cast<SkyMaterialData *>(material_storage->material_get_data(sky_material, RendererRD::MaterialStorage::SHADER_TYPE_SKY));
+	}
 
-		ERR_FAIL_COND(!material);
+	ERR_FAIL_NULL(material);
 
-		shader_data = material->shader_data;
+	shader_data = material->shader_data;
 
-		ERR_FAIL_COND(!shader_data);
+	ERR_FAIL_NULL(shader_data);
 
-		material->set_as_used();
+	material->set_as_used();
 
-		// Save our screen size, our buffers will already have been cleared
+	if (sky) {
+		// Save our screen size; our buffers will already have been cleared.
 		sky->screen_size.x = p_screen_size.x < 4 ? 4 : p_screen_size.x;
 		sky->screen_size.y = p_screen_size.y < 4 ? 4 : p_screen_size.y;
 
-		// Trigger updating radiance buffers
+		// Trigger updating radiance buffers.
 		if (sky->radiance.is_null()) {
 			invalidate_sky(sky);
 			update_dirty_skys();
 		}
 
-		if (shader_data->uses_time && p_scene_render->time - sky->prev_time > 0.00001) {
-			sky->prev_time = p_scene_render->time;
+		if (shader_data->uses_time && p_render_data->scene_data->time - sky->prev_time > 0.00001) {
+			sky->prev_time = p_render_data->scene_data->time;
 			sky->reflection.dirty = true;
 			RenderingServerDefault::redraw_request();
 		}
@@ -1081,172 +1044,205 @@ void SkyRD::setup_sky(RID p_env, Ref<RenderSceneBuffersRD> p_render_buffers, con
 			sky->reflection.dirty = true;
 		}
 
-		if (!p_cam_transform.origin.is_equal_approx(sky->prev_position) && shader_data->uses_position) {
-			sky->prev_position = p_cam_transform.origin;
+		if (!p_render_data->scene_data->cam_transform.origin.is_equal_approx(sky->prev_position) && shader_data->uses_position) {
+			sky->prev_position = p_render_data->scene_data->cam_transform.origin;
 			sky->reflection.dirty = true;
 		}
+	}
 
-		sky_scene_state.ubo.directional_light_count = 0;
-		if (shader_data->uses_light) {
-			// Run through the list of lights in the scene and pick out the Directional Lights.
-			// This can't be done in RenderSceneRenderRD::_setup lights because that needs to be called
-			// after the depth prepass, but this runs before the depth prepass
-			for (int i = 0; i < (int)p_lights.size(); i++) {
-				if (!light_storage->owns_light_instance(p_lights[i])) {
-					continue;
+	sky_scene_state.ubo.directional_light_count = 0;
+	if (shader_data->uses_light) {
+		const PagedArray<RID> &lights = *p_render_data->lights;
+		// Run through the list of lights in the scene and pick out the Directional Lights.
+		// This can't be done in RenderSceneRenderRD::_setup lights because that needs to be called
+		// after the depth prepass, but this runs before the depth prepass.
+		for (int i = 0; i < (int)lights.size(); i++) {
+			if (!light_storage->owns_light_instance(lights[i])) {
+				continue;
+			}
+			RID base = light_storage->light_instance_get_base_light(lights[i]);
+
+			ERR_CONTINUE(base.is_null());
+
+			RS::LightType type = light_storage->light_get_type(base);
+			if (type == RS::LIGHT_DIRECTIONAL && light_storage->light_directional_get_sky_mode(base) != RS::LIGHT_DIRECTIONAL_SKY_MODE_LIGHT_ONLY) {
+				SkyDirectionalLightData &sky_light_data = sky_scene_state.directional_lights[sky_scene_state.ubo.directional_light_count];
+				Transform3D light_transform = light_storage->light_instance_get_base_transform(lights[i]);
+				Vector3 world_direction = light_transform.basis.xform(Vector3(0, 0, 1)).normalized();
+
+				sky_light_data.direction[0] = world_direction.x;
+				sky_light_data.direction[1] = world_direction.y;
+				sky_light_data.direction[2] = world_direction.z;
+
+				float sign = light_storage->light_is_negative(base) ? -1 : 1;
+				sky_light_data.energy = sign * light_storage->light_get_param(base, RS::LIGHT_PARAM_ENERGY);
+
+				if (RendererSceneRenderRD::get_singleton()->is_using_physical_light_units()) {
+					sky_light_data.energy *= light_storage->light_get_param(base, RS::LIGHT_PARAM_INTENSITY);
 				}
-				RID base = light_storage->light_instance_get_base_light(p_lights[i]);
 
-				ERR_CONTINUE(base.is_null());
+				if (p_render_data->camera_attributes.is_valid()) {
+					sky_light_data.energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_render_data->camera_attributes);
+				}
 
-				RS::LightType type = light_storage->light_get_type(base);
-				if (type == RS::LIGHT_DIRECTIONAL && light_storage->light_directional_get_sky_mode(base) != RS::LIGHT_DIRECTIONAL_SKY_MODE_LIGHT_ONLY) {
-					SkyDirectionalLightData &sky_light_data = sky_scene_state.directional_lights[sky_scene_state.ubo.directional_light_count];
-					Transform3D light_transform = light_storage->light_instance_get_base_transform(p_lights[i]);
-					Vector3 world_direction = light_transform.basis.xform(Vector3(0, 0, 1)).normalized();
+				Color linear_col = light_storage->light_get_color(base).srgb_to_linear();
+				sky_light_data.color[0] = linear_col.r;
+				sky_light_data.color[1] = linear_col.g;
+				sky_light_data.color[2] = linear_col.b;
 
-					sky_light_data.direction[0] = world_direction.x;
-					sky_light_data.direction[1] = world_direction.y;
-					sky_light_data.direction[2] = world_direction.z;
+				sky_light_data.enabled = true;
 
-					float sign = light_storage->light_is_negative(base) ? -1 : 1;
-					sky_light_data.energy = sign * light_storage->light_get_param(base, RS::LIGHT_PARAM_ENERGY);
-
-					if (p_scene_render->is_using_physical_light_units()) {
-						sky_light_data.energy *= light_storage->light_get_param(base, RS::LIGHT_PARAM_INTENSITY);
-					}
-
-					if (p_camera_attributes.is_valid()) {
-						sky_light_data.energy *= RSG::camera_attributes->camera_attributes_get_exposure_normalization_factor(p_camera_attributes);
-					}
-
-					Color linear_col = light_storage->light_get_color(base).srgb_to_linear();
-					sky_light_data.color[0] = linear_col.r;
-					sky_light_data.color[1] = linear_col.g;
-					sky_light_data.color[2] = linear_col.b;
-
-					sky_light_data.enabled = true;
-
-					float angular_diameter = light_storage->light_get_param(base, RS::LIGHT_PARAM_SIZE);
-					if (angular_diameter > 0.0) {
-						// I know tan(0) is 0, but let's not risk it with numerical precision.
-						// technically this will keep expanding until reaching the sun, but all we care
-						// is expand until we reach the radius of the near plane (there can't be more occluders than that)
-						angular_diameter = Math::tan(Math::deg_to_rad(angular_diameter));
-					} else {
-						angular_diameter = 0.0;
-					}
-					sky_light_data.size = angular_diameter;
-					sky_scene_state.ubo.directional_light_count++;
-					if (sky_scene_state.ubo.directional_light_count >= sky_scene_state.max_directional_lights) {
-						break;
-					}
+				float angular_diameter = light_storage->light_get_param(base, RS::LIGHT_PARAM_SIZE);
+				if (angular_diameter > 0.0) {
+					// I know tan(0) is 0, but let's not risk it with numerical precision.
+					// Technically this will keep expanding until reaching the sun, but all we care about
+					// is expanding until we reach the radius of the near plane. There can't be more occluders than that.
+					angular_diameter = Math::tan(Math::deg_to_rad(angular_diameter));
+				} else {
+					angular_diameter = 0.0;
+				}
+				sky_light_data.size = angular_diameter;
+				sky_scene_state.ubo.directional_light_count++;
+				if (sky_scene_state.ubo.directional_light_count >= sky_scene_state.max_directional_lights) {
+					break;
 				}
 			}
-			// Check whether the directional_light_buffer changes
-			bool light_data_dirty = false;
+		}
+		// Check whether the directional_light_buffer changes.
+		bool light_data_dirty = false;
 
-			// Light buffer is dirty if we have fewer or more lights
-			// If we have fewer lights, make sure that old lights are disabled
-			if (sky_scene_state.ubo.directional_light_count != sky_scene_state.last_frame_directional_light_count) {
-				light_data_dirty = true;
-				for (uint32_t i = sky_scene_state.ubo.directional_light_count; i < sky_scene_state.max_directional_lights; i++) {
-					sky_scene_state.directional_lights[i].enabled = false;
-					sky_scene_state.last_frame_directional_lights[i].enabled = false;
+		// Light buffer is dirty if we have fewer or more lights.
+		// If we have fewer lights, make sure that old lights are disabled.
+		if (sky_scene_state.ubo.directional_light_count != sky_scene_state.last_frame_directional_light_count) {
+			light_data_dirty = true;
+			for (uint32_t i = sky_scene_state.ubo.directional_light_count; i < sky_scene_state.max_directional_lights; i++) {
+				sky_scene_state.directional_lights[i].enabled = false;
+				sky_scene_state.last_frame_directional_lights[i].enabled = false;
+			}
+		}
+
+		if (!light_data_dirty) {
+			for (uint32_t i = 0; i < sky_scene_state.ubo.directional_light_count; i++) {
+				if (sky_scene_state.directional_lights[i].direction[0] != sky_scene_state.last_frame_directional_lights[i].direction[0] ||
+						sky_scene_state.directional_lights[i].direction[1] != sky_scene_state.last_frame_directional_lights[i].direction[1] ||
+						sky_scene_state.directional_lights[i].direction[2] != sky_scene_state.last_frame_directional_lights[i].direction[2] ||
+						sky_scene_state.directional_lights[i].energy != sky_scene_state.last_frame_directional_lights[i].energy ||
+						sky_scene_state.directional_lights[i].color[0] != sky_scene_state.last_frame_directional_lights[i].color[0] ||
+						sky_scene_state.directional_lights[i].color[1] != sky_scene_state.last_frame_directional_lights[i].color[1] ||
+						sky_scene_state.directional_lights[i].color[2] != sky_scene_state.last_frame_directional_lights[i].color[2] ||
+						sky_scene_state.directional_lights[i].enabled != sky_scene_state.last_frame_directional_lights[i].enabled ||
+						sky_scene_state.directional_lights[i].size != sky_scene_state.last_frame_directional_lights[i].size) {
+					light_data_dirty = true;
+					break;
 				}
 			}
+		}
 
-			if (!light_data_dirty) {
-				for (uint32_t i = 0; i < sky_scene_state.ubo.directional_light_count; i++) {
-					if (sky_scene_state.directional_lights[i].direction[0] != sky_scene_state.last_frame_directional_lights[i].direction[0] ||
-							sky_scene_state.directional_lights[i].direction[1] != sky_scene_state.last_frame_directional_lights[i].direction[1] ||
-							sky_scene_state.directional_lights[i].direction[2] != sky_scene_state.last_frame_directional_lights[i].direction[2] ||
-							sky_scene_state.directional_lights[i].energy != sky_scene_state.last_frame_directional_lights[i].energy ||
-							sky_scene_state.directional_lights[i].color[0] != sky_scene_state.last_frame_directional_lights[i].color[0] ||
-							sky_scene_state.directional_lights[i].color[1] != sky_scene_state.last_frame_directional_lights[i].color[1] ||
-							sky_scene_state.directional_lights[i].color[2] != sky_scene_state.last_frame_directional_lights[i].color[2] ||
-							sky_scene_state.directional_lights[i].enabled != sky_scene_state.last_frame_directional_lights[i].enabled ||
-							sky_scene_state.directional_lights[i].size != sky_scene_state.last_frame_directional_lights[i].size) {
-						light_data_dirty = true;
-						break;
-					}
-				}
-			}
+		if (light_data_dirty) {
+			RD::get_singleton()->buffer_update(sky_scene_state.directional_light_buffer, 0, sizeof(SkyDirectionalLightData) * sky_scene_state.max_directional_lights, sky_scene_state.directional_lights);
 
-			if (light_data_dirty) {
-				RD::get_singleton()->buffer_update(sky_scene_state.directional_light_buffer, 0, sizeof(SkyDirectionalLightData) * sky_scene_state.max_directional_lights, sky_scene_state.directional_lights);
-
-				SkyDirectionalLightData *temp = sky_scene_state.last_frame_directional_lights;
-				sky_scene_state.last_frame_directional_lights = sky_scene_state.directional_lights;
-				sky_scene_state.directional_lights = temp;
-				sky_scene_state.last_frame_directional_light_count = sky_scene_state.ubo.directional_light_count;
+			SkyDirectionalLightData *temp = sky_scene_state.last_frame_directional_lights;
+			sky_scene_state.last_frame_directional_lights = sky_scene_state.directional_lights;
+			sky_scene_state.directional_lights = temp;
+			sky_scene_state.last_frame_directional_light_count = sky_scene_state.ubo.directional_light_count;
+			if (sky) {
 				sky->reflection.dirty = true;
 			}
 		}
 	}
 
-	//setup fog variables
+	// Setup fog variables.
 	sky_scene_state.ubo.volumetric_fog_enabled = false;
-	if (p_render_buffers.is_valid()) {
-		if (p_render_buffers->has_custom_data(RB_SCOPE_FOG)) {
-			Ref<RendererRD::Fog::VolumetricFog> fog = p_render_buffers->get_custom_data(RB_SCOPE_FOG);
-			sky_scene_state.ubo.volumetric_fog_enabled = true;
+	if (p_render_data->render_buffers->has_custom_data(RB_SCOPE_FOG)) {
+		Ref<RendererRD::Fog::VolumetricFog> fog = p_render_data->render_buffers->get_custom_data(RB_SCOPE_FOG);
+		sky_scene_state.ubo.volumetric_fog_enabled = true;
 
-			float fog_end = fog->length;
-			if (fog_end > 0.0) {
-				sky_scene_state.ubo.volumetric_fog_inv_length = 1.0 / fog_end;
-			} else {
-				sky_scene_state.ubo.volumetric_fog_inv_length = 1.0;
-			}
-
-			float fog_detail_spread = fog->spread; //reverse lookup
-			if (fog_detail_spread > 0.0) {
-				sky_scene_state.ubo.volumetric_fog_detail_spread = 1.0 / fog_detail_spread;
-			} else {
-				sky_scene_state.ubo.volumetric_fog_detail_spread = 1.0;
-			}
-
-			sky_scene_state.fog_uniform_set = fog->sky_uniform_set;
+		float fog_end = fog->length;
+		if (fog_end > 0.0) {
+			sky_scene_state.ubo.volumetric_fog_inv_length = 1.0 / fog_end;
+		} else {
+			sky_scene_state.ubo.volumetric_fog_inv_length = 1.0;
 		}
+
+		float fog_detail_spread = fog->spread; // Reverse lookup.
+		if (fog_detail_spread > 0.0) {
+			sky_scene_state.ubo.volumetric_fog_detail_spread = 1.0 / fog_detail_spread;
+		} else {
+			sky_scene_state.ubo.volumetric_fog_detail_spread = 1.0;
+		}
+
+		sky_scene_state.fog_uniform_set = fog->sky_uniform_set;
 	}
 
-	sky_scene_state.view_count = p_view_count;
-	sky_scene_state.cam_transform = p_cam_transform;
-	sky_scene_state.cam_projection = p_view_projections[0]; // We only use this when rendering a single view
+	sky_scene_state.view_count = p_render_data->scene_data->view_count;
+	sky_scene_state.cam_transform = p_render_data->scene_data->cam_transform;
 
-	// Our info in our UBO is only used if we're rendering stereo
-	for (uint32_t i = 0; i < p_view_count; i++) {
-		RendererRD::MaterialStorage::store_camera(p_view_projections[i].inverse(), sky_scene_state.ubo.view_inv_projections[i]);
-		sky_scene_state.ubo.view_eye_offsets[i][0] = p_view_eye_offsets[i].x;
-		sky_scene_state.ubo.view_eye_offsets[i][1] = p_view_eye_offsets[i].y;
-		sky_scene_state.ubo.view_eye_offsets[i][2] = p_view_eye_offsets[i].z;
+	Projection correction;
+	correction.set_depth_correction(p_render_data->scene_data->flip_y, true);
+	correction.add_jitter_offset(p_render_data->scene_data->taa_jitter);
+
+	Projection projection = p_render_data->scene_data->cam_projection;
+	if (p_render_data->scene_data->cam_frustum) {
+		// We don't use a full projection matrix for the sky, this is enough to make up for it.
+		projection[2].y = -projection[2].y;
+	}
+
+	float custom_fov = RendererSceneRenderRD::get_singleton()->environment_get_sky_custom_fov(p_render_data->environment);
+
+	if (custom_fov && sky_scene_state.view_count == 1) {
+		// With custom fov we don't support stereo...
+		float near_plane = projection.get_z_near();
+		float far_plane = projection.get_z_far();
+		float aspect = projection.get_aspect();
+
+		projection.set_perspective(custom_fov, aspect, near_plane, far_plane);
+	}
+
+	sky_scene_state.cam_projection = correction * projection;
+
+	// Our info in our UBO is only used if we're rendering stereo.
+	for (uint32_t i = 0; i < p_render_data->scene_data->view_count; i++) {
+		Projection view_inv_projection = (correction * p_render_data->scene_data->view_projection[i]).inverse();
+		if (p_render_data->scene_data->view_count > 1) {
+			// Reprojection is used when we need to have things in combined space.
+			RendererRD::MaterialStorage::store_camera(p_render_data->scene_data->cam_projection * view_inv_projection, sky_scene_state.ubo.combined_reprojection[i]);
+		} else {
+			// This is unused so just reset to identity.
+			Projection ident;
+			RendererRD::MaterialStorage::store_camera(ident, sky_scene_state.ubo.combined_reprojection[i]);
+		}
+
+		RendererRD::MaterialStorage::store_camera(view_inv_projection, sky_scene_state.ubo.view_inv_projections[i]);
+		sky_scene_state.ubo.view_eye_offsets[i][0] = p_render_data->scene_data->view_eye_offset[i].x;
+		sky_scene_state.ubo.view_eye_offsets[i][1] = p_render_data->scene_data->view_eye_offset[i].y;
+		sky_scene_state.ubo.view_eye_offsets[i][2] = p_render_data->scene_data->view_eye_offset[i].z;
 		sky_scene_state.ubo.view_eye_offsets[i][3] = 0.0;
 	}
 
-	sky_scene_state.ubo.z_far = p_view_projections[0].get_z_far(); // Should be the same for all projection
-	sky_scene_state.ubo.fog_enabled = RendererSceneRenderRD::get_singleton()->environment_get_fog_enabled(p_env);
-	sky_scene_state.ubo.fog_density = RendererSceneRenderRD::get_singleton()->environment_get_fog_density(p_env);
-	sky_scene_state.ubo.fog_aerial_perspective = RendererSceneRenderRD::get_singleton()->environment_get_fog_aerial_perspective(p_env);
-	Color fog_color = RendererSceneRenderRD::get_singleton()->environment_get_fog_light_color(p_env).srgb_to_linear();
-	float fog_energy = RendererSceneRenderRD::get_singleton()->environment_get_fog_light_energy(p_env);
+	sky_scene_state.ubo.z_far = p_render_data->scene_data->view_projection[0].get_z_far(); // Should be the same for all projection.
+	sky_scene_state.ubo.fog_enabled = RendererSceneRenderRD::get_singleton()->environment_get_fog_enabled(p_render_data->environment);
+	sky_scene_state.ubo.fog_density = RendererSceneRenderRD::get_singleton()->environment_get_fog_density(p_render_data->environment);
+	sky_scene_state.ubo.fog_aerial_perspective = RendererSceneRenderRD::get_singleton()->environment_get_fog_aerial_perspective(p_render_data->environment);
+	Color fog_color = RendererSceneRenderRD::get_singleton()->environment_get_fog_light_color(p_render_data->environment).srgb_to_linear();
+	float fog_energy = RendererSceneRenderRD::get_singleton()->environment_get_fog_light_energy(p_render_data->environment);
 	sky_scene_state.ubo.fog_light_color[0] = fog_color.r * fog_energy;
 	sky_scene_state.ubo.fog_light_color[1] = fog_color.g * fog_energy;
 	sky_scene_state.ubo.fog_light_color[2] = fog_color.b * fog_energy;
-	sky_scene_state.ubo.fog_sun_scatter = RendererSceneRenderRD::get_singleton()->environment_get_fog_sun_scatter(p_env);
+	sky_scene_state.ubo.fog_sun_scatter = RendererSceneRenderRD::get_singleton()->environment_get_fog_sun_scatter(p_render_data->environment);
 
-	sky_scene_state.ubo.fog_sky_affect = RendererSceneRenderRD::get_singleton()->environment_get_fog_sky_affect(p_env);
-	sky_scene_state.ubo.volumetric_fog_sky_affect = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_sky_affect(p_env);
+	sky_scene_state.ubo.fog_sky_affect = RendererSceneRenderRD::get_singleton()->environment_get_fog_sky_affect(p_render_data->environment);
+	sky_scene_state.ubo.volumetric_fog_sky_affect = RendererSceneRenderRD::get_singleton()->environment_get_volumetric_fog_sky_affect(p_render_data->environment);
 
 	RD::get_singleton()->buffer_update(sky_scene_state.uniform_buffer, 0, sizeof(SkySceneState::UBO), &sky_scene_state.ubo);
 }
 
-void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_env, const Vector3 &p_global_pos, double p_time, float p_luminance_multiplier) {
+void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_env, const Vector3 &p_global_pos, double p_time, float p_luminance_multiplier, float p_brightness_multiplier) {
 	ERR_FAIL_COND(p_render_buffers.is_null());
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	ERR_FAIL_COND(p_env.is_null());
 
 	Sky *sky = get_sky(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_env));
-	ERR_FAIL_COND(!sky);
+	ERR_FAIL_NULL(sky);
 
 	RID sky_material = sky_get_material(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_env));
 
@@ -1264,17 +1260,17 @@ void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, 
 		material = static_cast<SkyMaterialData *>(material_storage->material_get_data(sky_material, RendererRD::MaterialStorage::SHADER_TYPE_SKY));
 	}
 
-	ERR_FAIL_COND(!material);
+	ERR_FAIL_NULL(material);
 
 	SkyShaderData *shader_data = material->shader_data;
 
-	ERR_FAIL_COND(!shader_data);
+	ERR_FAIL_NULL(shader_data);
 
 	bool update_single_frame = sky->mode == RS::SKY_MODE_REALTIME || sky->mode == RS::SKY_MODE_QUALITY;
 	RS::SkyMode sky_mode = sky->mode;
 
 	if (sky_mode == RS::SKY_MODE_AUTOMATIC) {
-		if (shader_data->uses_time || shader_data->uses_position) {
+		if ((shader_data->uses_time || shader_data->uses_position) && sky->radiance_size == 256) {
 			update_single_frame = true;
 			sky_mode = RS::SKY_MODE_REALTIME;
 		} else if (shader_data->uses_light || shader_data->ubo_size > 0) {
@@ -1316,7 +1312,7 @@ void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, 
 		Projection cm;
 		cm.set_perspective(90, 1, 0.01, 10.0);
 		Projection correction;
-		correction.set_depth_correction(true);
+		correction.set_depth_correction(false);
 		cm = correction * cm;
 
 		// Note, we ignore environment_get_sky_orientation here as this is applied when we do our lookup in our scene shader.
@@ -1333,8 +1329,8 @@ void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, 
 				Basis local_view = Basis::looking_at(view_normals[i], view_up[i]);
 				RID texture_uniform_set = sky->get_textures(SKY_TEXTURE_SET_CUBEMAP_QUARTER_RES, sky_shader.default_shader_rd, p_render_buffers);
 
-				cubemap_draw_list = RD::get_singleton()->draw_list_begin(sky->reflection.layers[0].mipmaps[2].framebuffers[i], RD::INITIAL_ACTION_KEEP, RD::FINAL_ACTION_READ, RD::INITIAL_ACTION_KEEP, RD::FINAL_ACTION_DISCARD);
-				_render_sky(cubemap_draw_list, p_time, sky->reflection.layers[0].mipmaps[2].framebuffers[i], pipeline, material->uniform_set, texture_uniform_set, cm, local_view, p_global_pos, p_luminance_multiplier);
+				cubemap_draw_list = RD::get_singleton()->draw_list_begin(sky->reflection.layers[0].mipmaps[2].framebuffers[i]);
+				_render_sky(cubemap_draw_list, p_time, sky->reflection.layers[0].mipmaps[2].framebuffers[i], pipeline, material->uniform_set, texture_uniform_set, cm, local_view, p_global_pos, p_luminance_multiplier, p_brightness_multiplier);
 				RD::get_singleton()->draw_list_end();
 			}
 			RD::get_singleton()->draw_command_end_label();
@@ -1354,8 +1350,8 @@ void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, 
 				Basis local_view = Basis::looking_at(view_normals[i], view_up[i]);
 				RID texture_uniform_set = sky->get_textures(SKY_TEXTURE_SET_CUBEMAP_HALF_RES, sky_shader.default_shader_rd, p_render_buffers);
 
-				cubemap_draw_list = RD::get_singleton()->draw_list_begin(sky->reflection.layers[0].mipmaps[1].framebuffers[i], RD::INITIAL_ACTION_KEEP, RD::FINAL_ACTION_READ, RD::INITIAL_ACTION_KEEP, RD::FINAL_ACTION_DISCARD);
-				_render_sky(cubemap_draw_list, p_time, sky->reflection.layers[0].mipmaps[1].framebuffers[i], pipeline, material->uniform_set, texture_uniform_set, cm, local_view, p_global_pos, p_luminance_multiplier);
+				cubemap_draw_list = RD::get_singleton()->draw_list_begin(sky->reflection.layers[0].mipmaps[1].framebuffers[i]);
+				_render_sky(cubemap_draw_list, p_time, sky->reflection.layers[0].mipmaps[1].framebuffers[i], pipeline, material->uniform_set, texture_uniform_set, cm, local_view, p_global_pos, p_luminance_multiplier, p_brightness_multiplier);
 				RD::get_singleton()->draw_list_end();
 			}
 			RD::get_singleton()->draw_command_end_label();
@@ -1371,8 +1367,8 @@ void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, 
 			Basis local_view = Basis::looking_at(view_normals[i], view_up[i]);
 			RID texture_uniform_set = sky->get_textures(SKY_TEXTURE_SET_CUBEMAP, sky_shader.default_shader_rd, p_render_buffers);
 
-			cubemap_draw_list = RD::get_singleton()->draw_list_begin(sky->reflection.layers[0].mipmaps[0].framebuffers[i], RD::INITIAL_ACTION_KEEP, RD::FINAL_ACTION_READ, RD::INITIAL_ACTION_KEEP, RD::FINAL_ACTION_DISCARD);
-			_render_sky(cubemap_draw_list, p_time, sky->reflection.layers[0].mipmaps[0].framebuffers[i], pipeline, material->uniform_set, texture_uniform_set, cm, local_view, p_global_pos, p_luminance_multiplier);
+			cubemap_draw_list = RD::get_singleton()->draw_list_begin(sky->reflection.layers[0].mipmaps[0].framebuffers[i], RD::DRAW_DEFAULT_ALL, Vector<Color>(), 1.0f, 0, Rect2(), RDD::BreadcrumbMarker::SKY_PASS | uint32_t(i));
+			_render_sky(cubemap_draw_list, p_time, sky->reflection.layers[0].mipmaps[0].framebuffers[i], pipeline, material->uniform_set, texture_uniform_set, cm, local_view, p_global_pos, p_luminance_multiplier, p_brightness_multiplier);
 			RD::get_singleton()->draw_list_end();
 		}
 		RD::get_singleton()->draw_command_end_label();
@@ -1414,7 +1410,7 @@ void SkyRD::update_radiance_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, 
 	}
 }
 
-void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_env, double p_time, float p_luminance_multiplier) {
+void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p_env, double p_time, float p_luminance_multiplier, float p_brightness_multiplier) {
 	ERR_FAIL_COND(p_render_buffers.is_null());
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	ERR_FAIL_COND(p_env.is_null());
@@ -1427,7 +1423,7 @@ void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p
 	RS::EnvironmentBG background = RendererSceneRenderRD::get_singleton()->environment_get_background(p_env);
 
 	if (!(background == RS::ENV_BG_CLEAR_COLOR || background == RS::ENV_BG_COLOR) || sky) {
-		ERR_FAIL_COND(!sky);
+		ERR_FAIL_NULL(sky);
 		sky_material = sky_get_material(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_env));
 
 		if (sky_material.is_valid()) {
@@ -1448,10 +1444,10 @@ void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p
 		material = static_cast<SkyMaterialData *>(material_storage->material_get_data(sky_material, RendererRD::MaterialStorage::SHADER_TYPE_SKY));
 	}
 
-	ERR_FAIL_COND(!material);
+	ERR_FAIL_NULL(material);
 
 	SkyShaderData *shader_data = material->shader_data;
-	ERR_FAIL_COND(!shader_data);
+	ERR_FAIL_NULL(shader_data);
 
 	if (!shader_data->uses_quarter_res && !shader_data->uses_half_res) {
 		return;
@@ -1465,19 +1461,8 @@ void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p
 	Basis sky_transform = RendererSceneRenderRD::get_singleton()->environment_get_sky_orientation(p_env);
 	sky_transform.invert();
 
-	float custom_fov = RendererSceneRenderRD::get_singleton()->environment_get_sky_custom_fov(p_env);
-
 	// Camera
 	Projection projection = sky_scene_state.cam_projection;
-
-	if (custom_fov && sky_scene_state.view_count == 1) {
-		// With custom fov we don't support stereo...
-		float near_plane = projection.get_z_near();
-		float far_plane = projection.get_z_far();
-		float aspect = projection.get_aspect();
-
-		projection.set_perspective(custom_fov, aspect, near_plane, far_plane);
-	}
 
 	sky_transform = sky_transform * sky_scene_state.cam_transform.basis;
 
@@ -1495,8 +1480,8 @@ void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p
 		Vector<Color> clear_colors;
 		clear_colors.push_back(Color(0.0, 0.0, 0.0));
 
-		RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(framebuffer, RD::INITIAL_ACTION_CLEAR, RD::FINAL_ACTION_READ, RD::INITIAL_ACTION_CLEAR, RD::FINAL_ACTION_DISCARD, clear_colors);
-		_render_sky(draw_list, p_time, framebuffer, pipeline, material->uniform_set, texture_uniform_set, projection, sky_transform, sky_scene_state.cam_transform.origin, p_luminance_multiplier);
+		RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(framebuffer, RD::DRAW_CLEAR_ALL, clear_colors);
+		_render_sky(draw_list, p_time, framebuffer, pipeline, material->uniform_set, texture_uniform_set, projection, sky_transform, sky_scene_state.cam_transform.origin, p_luminance_multiplier, p_brightness_multiplier);
 		RD::get_singleton()->draw_list_end();
 	}
 
@@ -1514,15 +1499,15 @@ void SkyRD::update_res_buffers(Ref<RenderSceneBuffersRD> p_render_buffers, RID p
 		Vector<Color> clear_colors;
 		clear_colors.push_back(Color(0.0, 0.0, 0.0));
 
-		RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(framebuffer, RD::INITIAL_ACTION_CLEAR, RD::FINAL_ACTION_READ, RD::INITIAL_ACTION_CLEAR, RD::FINAL_ACTION_DISCARD, clear_colors);
-		_render_sky(draw_list, p_time, framebuffer, pipeline, material->uniform_set, texture_uniform_set, projection, sky_transform, sky_scene_state.cam_transform.origin, p_luminance_multiplier);
+		RD::DrawListID draw_list = RD::get_singleton()->draw_list_begin(framebuffer, RD::DRAW_CLEAR_ALL, clear_colors);
+		_render_sky(draw_list, p_time, framebuffer, pipeline, material->uniform_set, texture_uniform_set, projection, sky_transform, sky_scene_state.cam_transform.origin, p_luminance_multiplier, p_brightness_multiplier);
 		RD::get_singleton()->draw_list_end();
 	}
 
 	RD::get_singleton()->draw_command_end_label(); // Setup Sky resolution buffers
 }
 
-void SkyRD::draw_sky(RD::DrawListID p_draw_list, Ref<RenderSceneBuffersRD> p_render_buffers, RID p_env, RID p_fb, double p_time, float p_luminance_multiplier) {
+void SkyRD::draw_sky(RD::DrawListID p_draw_list, Ref<RenderSceneBuffersRD> p_render_buffers, RID p_env, RID p_fb, double p_time, float p_luminance_multiplier, float p_brightness_multiplier) {
 	ERR_FAIL_COND(p_render_buffers.is_null());
 	RendererRD::MaterialStorage *material_storage = RendererRD::MaterialStorage::get_singleton();
 	ERR_FAIL_COND(p_env.is_null());
@@ -1535,7 +1520,7 @@ void SkyRD::draw_sky(RD::DrawListID p_draw_list, Ref<RenderSceneBuffersRD> p_ren
 	RS::EnvironmentBG background = RendererSceneRenderRD::get_singleton()->environment_get_background(p_env);
 
 	if (!(background == RS::ENV_BG_CLEAR_COLOR || background == RS::ENV_BG_COLOR) || sky) {
-		ERR_FAIL_COND(!sky);
+		ERR_FAIL_NULL(sky);
 		sky_material = sky_get_material(RendererSceneRenderRD::get_singleton()->environment_get_sky(p_env));
 
 		if (sky_material.is_valid()) {
@@ -1556,29 +1541,18 @@ void SkyRD::draw_sky(RD::DrawListID p_draw_list, Ref<RenderSceneBuffersRD> p_ren
 		material = static_cast<SkyMaterialData *>(material_storage->material_get_data(sky_material, RendererRD::MaterialStorage::SHADER_TYPE_SKY));
 	}
 
-	ERR_FAIL_COND(!material);
+	ERR_FAIL_NULL(material);
 
 	SkyShaderData *shader_data = material->shader_data;
-	ERR_FAIL_COND(!shader_data);
+	ERR_FAIL_NULL(shader_data);
 
 	material->set_as_used();
 
 	Basis sky_transform = RendererSceneRenderRD::get_singleton()->environment_get_sky_orientation(p_env);
 	sky_transform.invert();
 
-	float custom_fov = RendererSceneRenderRD::get_singleton()->environment_get_sky_custom_fov(p_env);
-
 	// Camera
 	Projection projection = sky_scene_state.cam_projection;
-
-	if (custom_fov && sky_scene_state.view_count == 1) {
-		// With custom fov we don't support stereo...
-		float near_plane = projection.get_z_near();
-		float far_plane = projection.get_z_far();
-		float aspect = projection.get_aspect();
-
-		projection.set_perspective(custom_fov, aspect, near_plane, far_plane);
-	}
 
 	sky_transform = sky_transform * sky_scene_state.cam_transform.basis;
 
@@ -1591,7 +1565,7 @@ void SkyRD::draw_sky(RD::DrawListID p_draw_list, Ref<RenderSceneBuffersRD> p_ren
 		texture_uniform_set = sky_scene_state.fog_only_texture_uniform_set;
 	}
 
-	_render_sky(p_draw_list, p_time, p_fb, pipeline, material->uniform_set, texture_uniform_set, projection, sky_transform, sky_scene_state.cam_transform.origin, p_luminance_multiplier);
+	_render_sky(p_draw_list, p_time, p_fb, pipeline, material->uniform_set, texture_uniform_set, projection, sky_transform, sky_scene_state.cam_transform.origin, p_luminance_multiplier, p_brightness_multiplier);
 }
 
 void SkyRD::invalidate_sky(Sky *p_sky) {
@@ -1675,14 +1649,14 @@ void SkyRD::update_dirty_skys() {
 
 RID SkyRD::sky_get_material(RID p_sky) const {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND_V(!sky, RID());
+	ERR_FAIL_NULL_V(sky, RID());
 
 	return sky->material;
 }
 
 float SkyRD::sky_get_baked_exposure(RID p_sky) const {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND_V(!sky, 1.0);
+	ERR_FAIL_NULL_V(sky, 1.0);
 
 	return sky->baked_exposure;
 }
@@ -1701,7 +1675,7 @@ SkyRD::Sky *SkyRD::get_sky(RID p_sky) const {
 
 void SkyRD::free_sky(RID p_sky) {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND(!sky);
+	ERR_FAIL_NULL(sky);
 
 	sky->free();
 	sky_owner.free(p_sky);
@@ -1709,7 +1683,7 @@ void SkyRD::free_sky(RID p_sky) {
 
 void SkyRD::sky_set_radiance_size(RID p_sky, int p_radiance_size) {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND(!sky);
+	ERR_FAIL_NULL(sky);
 
 	if (sky->set_radiance_size(p_radiance_size)) {
 		invalidate_sky(sky);
@@ -1718,7 +1692,7 @@ void SkyRD::sky_set_radiance_size(RID p_sky, int p_radiance_size) {
 
 void SkyRD::sky_set_mode(RID p_sky, RS::SkyMode p_mode) {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND(!sky);
+	ERR_FAIL_NULL(sky);
 
 	if (sky->set_mode(p_mode)) {
 		invalidate_sky(sky);
@@ -1727,7 +1701,7 @@ void SkyRD::sky_set_mode(RID p_sky, RS::SkyMode p_mode) {
 
 void SkyRD::sky_set_material(RID p_sky, RID p_material) {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND(!sky);
+	ERR_FAIL_NULL(sky);
 
 	if (sky->set_material(p_material)) {
 		invalidate_sky(sky);
@@ -1736,7 +1710,7 @@ void SkyRD::sky_set_material(RID p_sky, RID p_material) {
 
 Ref<Image> SkyRD::sky_bake_panorama(RID p_sky, float p_energy, bool p_bake_irradiance, const Size2i &p_size) {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND_V(!sky, Ref<Image>());
+	ERR_FAIL_NULL_V(sky, Ref<Image>());
 
 	update_dirty_skys();
 
@@ -1745,7 +1719,7 @@ Ref<Image> SkyRD::sky_bake_panorama(RID p_sky, float p_energy, bool p_bake_irrad
 
 RID SkyRD::sky_get_radiance_texture_rd(RID p_sky) const {
 	Sky *sky = get_sky(p_sky);
-	ERR_FAIL_COND_V(!sky, RID());
+	ERR_FAIL_NULL_V(sky, RID());
 
 	return sky->radiance;
 }

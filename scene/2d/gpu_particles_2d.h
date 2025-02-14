@@ -47,8 +47,12 @@ public:
 private:
 	RID particles;
 
+	bool emitting = false;
+	bool active = false;
+	bool signal_canceled = false;
 	bool one_shot = false;
 	int amount = 0;
+	float amount_ratio = 1.0;
 	double lifetime = 0.0;
 	double pre_process_time = 0.0;
 	real_t explosiveness_ratio = 0.0;
@@ -59,6 +63,11 @@ private:
 	int fixed_fps = 0;
 	bool fractional_delta = false;
 	bool interpolate = true;
+	float interp_to_end_factor = 0;
+	Vector3 previous_velocity;
+	Vector2 previous_position;
+	uint32_t seed = 0;
+	bool use_fixed_seed = false;
 #ifdef TOOLS_ENABLED
 	bool show_visibility_rect = false;
 #endif
@@ -78,6 +87,10 @@ private:
 	int trail_sections = 8;
 	int trail_section_subdivisions = 4;
 
+	double time = 0.0;
+	double emission_time = 0.0;
+	double active_time = 0.0;
+
 	RID mesh;
 
 	void _attach_sub_emitter();
@@ -89,6 +102,11 @@ protected:
 	void _validate_property(PropertyInfo &p_property) const;
 	void _notification(int p_what);
 	void _update_collision_size();
+
+#ifndef DISABLE_DEPRECATED
+	void _restart_bind_compat_92089();
+	static void _bind_compatibility_methods();
+#endif
 
 public:
 	void set_emitting(bool p_emitting);
@@ -107,6 +125,8 @@ public:
 	void set_trail_lifetime(double p_seconds);
 	void set_trail_sections(int p_sections);
 	void set_trail_section_subdivisions(int p_subdivisions);
+	void set_interp_to_end(float p_interp);
+	void request_particles_process(real_t p_requested_process_time);
 
 #ifdef TOOLS_ENABLED
 	void set_show_visibility_rect(bool p_show_visibility_rect);
@@ -129,6 +149,7 @@ public:
 	double get_trail_lifetime() const;
 	int get_trail_sections() const;
 	int get_trail_section_subdivisions() const;
+	float get_interp_to_end() const;
 
 	void set_fixed_fps(int p_count);
 	int get_fixed_fps() const;
@@ -145,10 +166,19 @@ public:
 	void set_texture(const Ref<Texture2D> &p_texture);
 	Ref<Texture2D> get_texture() const;
 
+	void set_amount_ratio(float p_ratio);
+	float get_amount_ratio() const;
+
 	PackedStringArray get_configuration_warnings() const override;
 
 	void set_sub_emitter(const NodePath &p_path);
 	NodePath get_sub_emitter() const;
+
+	void set_use_fixed_seed(bool p_use_fixed_seed);
+	bool get_use_fixed_seed() const;
+
+	void set_seed(uint32_t p_seed);
+	uint32_t get_seed() const;
 
 	enum EmitFlags {
 		EMIT_FLAG_POSITION = RS::PARTICLES_EMIT_FLAG_POSITION,
@@ -160,8 +190,10 @@ public:
 
 	void emit_particle(const Transform2D &p_transform, const Vector2 &p_velocity, const Color &p_color, const Color &p_custom, uint32_t p_emit_flags);
 
-	void restart();
+	void restart(bool p_keep_seed = false);
 	Rect2 capture_rect() const;
+	void convert_from_particles(Node *p_particles);
+
 	GPUParticles2D();
 	~GPUParticles2D();
 };

@@ -173,7 +173,7 @@ String ShaderPreprocessor::Tokenizer::get_identifier(bool *r_is_cursor, bool p_s
 	}
 
 	String id = vector_to_string(text);
-	if (!id.is_valid_identifier()) {
+	if (!id.is_valid_ascii_identifier()) {
 		return "";
 	}
 
@@ -393,6 +393,8 @@ void ShaderPreprocessor::process_directive(Tokenizer *p_tokenizer) {
 		process_else(p_tokenizer);
 	} else if (directive == "endif") {
 		process_endif(p_tokenizer);
+	} else if (directive == "error") {
+		process_error(p_tokenizer);
 	} else if (directive == "define") {
 		process_define(p_tokenizer);
 	} else if (directive == "undef") {
@@ -420,11 +422,11 @@ void ShaderPreprocessor::process_define(Tokenizer *p_tokenizer) {
 		return;
 	}
 
+	Vector<String> args;
 	if (p_tokenizer->peek() == '(') {
 		// Macro has arguments.
 		p_tokenizer->get_token();
 
-		Vector<String> args;
 		while (true) {
 			String name = p_tokenizer->get_identifier();
 			if (name.is_empty()) {
@@ -442,24 +444,31 @@ void ShaderPreprocessor::process_define(Tokenizer *p_tokenizer) {
 				return;
 			}
 		}
-
-		Define *define = memnew(Define);
-		define->arguments = args;
-		define->body = tokens_to_string(p_tokenizer->advance('\n')).strip_edges();
-		state->defines[label] = define;
-	} else {
-		// Simple substitution macro.
-		Define *define = memnew(Define);
-		define->body = tokens_to_string(p_tokenizer->advance('\n')).strip_edges();
-		state->defines[label] = define;
 	}
+
+	String body = tokens_to_string(p_tokenizer->advance('\n')).strip_edges();
+	if (body.begins_with("##")) {
+		set_error(RTR("'##' must not appear at beginning of macro expansion."), line);
+		return;
+	}
+	if (body.ends_with("##")) {
+		set_error(RTR("'##' must not appear at end of macro expansion."), line);
+		return;
+	}
+
+	Define *define = memnew(Define);
+	if (!args.is_empty()) {
+		define->arguments = args;
+	}
+	define->body = body;
+	state->defines[label] = define;
 }
 
 void ShaderPreprocessor::process_elif(Tokenizer *p_tokenizer) {
 	const int line = p_tokenizer->get_line();
 
 	if (state->current_branch == nullptr || state->current_branch->else_defined) {
-		set_error(RTR("Unmatched elif."), line);
+		set_error(vformat(RTR("Unmatched '%s' directive."), "elif"), line);
 		return;
 	}
 	if (state->previous_region != nullptr) {
@@ -516,7 +525,7 @@ void ShaderPreprocessor::process_else(Tokenizer *p_tokenizer) {
 	const int line = p_tokenizer->get_line();
 
 	if (state->current_branch == nullptr || state->current_branch->else_defined) {
-		set_error(RTR("Unmatched else."), line);
+		set_error(vformat(RTR("Unmatched '%s' directive."), "else"), line);
 		return;
 	}
 	if (state->previous_region != nullptr) {
@@ -524,7 +533,7 @@ void ShaderPreprocessor::process_else(Tokenizer *p_tokenizer) {
 	}
 
 	if (!p_tokenizer->consume_empty_line()) {
-		set_error(RTR("Invalid else."), p_tokenizer->get_line());
+		set_error(vformat(RTR("Invalid '%s' directive."), "else"), line);
 	}
 
 	bool skip = false;
@@ -552,7 +561,7 @@ void ShaderPreprocessor::process_endif(Tokenizer *p_tokenizer) {
 
 	state->condition_depth--;
 	if (state->condition_depth < 0) {
-		set_error(RTR("Unmatched endif."), line);
+		set_error(vformat(RTR("Unmatched '%s' directive."), "endif"), line);
 		return;
 	}
 	if (state->previous_region != nullptr) {
@@ -561,11 +570,26 @@ void ShaderPreprocessor::process_endif(Tokenizer *p_tokenizer) {
 	}
 
 	if (!p_tokenizer->consume_empty_line()) {
-		set_error(RTR("Invalid endif."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "endif"), line);
 	}
 
 	state->current_branch = state->current_branch->parent;
 	state->branches.pop_back();
+}
+
+void ShaderPreprocessor::process_error(Tokenizer *p_tokenizer) {
+	const int line = p_tokenizer->get_line();
+
+	const String body = tokens_to_string(p_tokenizer->advance('\n')).strip_edges();
+	if (body.is_empty()) {
+		set_error(" ", line);
+	} else {
+		set_error(body, line);
+	}
+
+	if (!p_tokenizer->consume_empty_line()) {
+		set_error(vformat(RTR("Invalid '%s' directive."), "error"), line);
+	}
 }
 
 void ShaderPreprocessor::process_if(Tokenizer *p_tokenizer) {
@@ -619,7 +643,7 @@ void ShaderPreprocessor::process_ifdef(Tokenizer *p_tokenizer) {
 	}
 
 	if (!p_tokenizer->consume_empty_line()) {
-		set_error(RTR("Invalid ifdef."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "ifdef"), line);
 		return;
 	}
 
@@ -641,7 +665,7 @@ void ShaderPreprocessor::process_ifndef(Tokenizer *p_tokenizer) {
 	}
 
 	if (!p_tokenizer->consume_empty_line()) {
-		set_error(RTR("Invalid ifndef."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "ifndef"), line);
 		return;
 	}
 
@@ -740,7 +764,7 @@ void ShaderPreprocessor::process_include(Tokenizer *p_tokenizer) {
 	processor.preprocess(state, included, result);
 	add_to_output("@@>" + real_path + "\n"); // Add token for enter include path
 	add_to_output(result);
-	add_to_output("\n@@<\n"); // Add token for exit include path
+	add_to_output("\n@@<" + real_path + "\n"); // Add token for exit include path.
 
 	// Reset to last include if there are no errors. We want to use this as context.
 	if (state->error.is_empty()) {
@@ -764,21 +788,21 @@ void ShaderPreprocessor::process_pragma(Tokenizer *p_tokenizer) {
 	}
 
 	if (label.is_empty()) {
-		set_error(RTR("Invalid pragma directive."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "pragma"), line);
 		return;
 	}
 
-	// Rxplicitly handle pragma values here.
+	// Explicitly handle pragma values here.
 	// If more pragma options are created, then refactor into a more defined structure.
 	if (label == "disable_preprocessor") {
 		state->disabled = true;
 	} else {
-		set_error(RTR("Invalid pragma directive."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "pragma"), line);
 		return;
 	}
 
 	if (!p_tokenizer->consume_empty_line()) {
-		set_error(RTR("Invalid pragma directive."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "pragma"), line);
 		return;
 	}
 }
@@ -787,11 +811,16 @@ void ShaderPreprocessor::process_undef(Tokenizer *p_tokenizer) {
 	const int line = p_tokenizer->get_line();
 	const String label = p_tokenizer->get_identifier();
 	if (label.is_empty() || !p_tokenizer->consume_empty_line()) {
-		set_error(RTR("Invalid undef."), line);
+		set_error(vformat(RTR("Invalid '%s' directive."), "undef"), line);
 		return;
 	}
 
 	if (state->defines.has(label)) {
+		if (state->defines[label]->is_builtin) {
+			set_error(vformat(RTR("Cannot use '%s' on built-in define."), "undef"), line);
+			return;
+		}
+
 		memdelete(state->defines[label]);
 		state->defines.erase(label);
 	}
@@ -1074,9 +1103,13 @@ bool ShaderPreprocessor::expand_macros_once(const String &p_line, int p_line_num
 				}
 			}
 
+			concatenate_macro_body(body);
+
 			result = result.substr(0, index) + " " + body + " " + result.substr(args_end + 1, result.length());
 		} else {
-			result = result.substr(0, index) + body + result.substr(index + key.length(), result.length() - (index + key.length()));
+			concatenate_macro_body(body);
+
+			result = result.substr(0, index) + " " + body + " " + result.substr(index + key.length(), result.length() - (index + key.length()));
 		}
 
 		r_expanded = result;
@@ -1113,6 +1146,40 @@ bool ShaderPreprocessor::find_match(const String &p_string, const String &p_valu
 	}
 
 	return false;
+}
+
+void ShaderPreprocessor::concatenate_macro_body(String &r_body) {
+	int index_start = r_body.find("##");
+	while (index_start > -1) {
+		int index_end = index_start + 2; // First character after ##.
+		// The macro was checked during creation so this should never happen.
+		ERR_FAIL_INDEX(index_end, r_body.size());
+
+		// If there more than two # in a row, then it's not a concatenation.
+		bool is_concat = true;
+		while (index_end <= r_body.length() && r_body[index_end] == '#') {
+			index_end++;
+			is_concat = false;
+		}
+		if (!is_concat) {
+			index_start = r_body.find("##", index_end);
+			continue;
+		}
+
+		// Skip whitespace after ##.
+		while (index_end < r_body.length() && is_char_space(r_body[index_end])) {
+			index_end++;
+		}
+
+		// Skip whitespace before ##.
+		while (index_start >= 1 && is_char_space(r_body[index_start - 1])) {
+			index_start--;
+		}
+
+		r_body = r_body.substr(0, index_start) + r_body.substr(index_end, r_body.length() - index_end);
+
+		index_start = r_body.find("##", index_start);
+	}
 }
 
 String ShaderPreprocessor::next_directive(Tokenizer *p_tokenizer, const Vector<String> &p_directives) {
@@ -1167,6 +1234,13 @@ ShaderPreprocessor::Define *ShaderPreprocessor::create_define(const String &p_bo
 	ShaderPreprocessor::Define *define = memnew(Define);
 	define->body = p_body;
 	return define;
+}
+
+void ShaderPreprocessor::insert_builtin_define(String p_name, String p_value, State &p_state) {
+	Define *define = memnew(Define);
+	define->is_builtin = true;
+	define->body = p_value;
+	p_state.defines[p_name] = define;
 }
 
 void ShaderPreprocessor::clear_state() {
@@ -1262,6 +1336,24 @@ Error ShaderPreprocessor::preprocess(const String &p_code, const String &p_filen
 		pp_state.current_filename = p_filename;
 		pp_state.save_regions = r_regions != nullptr;
 	}
+
+	// Built-in defines.
+	{
+		const String rendering_method = OS::get_singleton()->get_current_rendering_method();
+
+		if (rendering_method == "forward_plus") {
+			insert_builtin_define("CURRENT_RENDERER", _MKSTR(2), pp_state);
+		} else if (rendering_method == "mobile") {
+			insert_builtin_define("CURRENT_RENDERER", _MKSTR(1), pp_state);
+		} else { // gl_compatibility
+			insert_builtin_define("CURRENT_RENDERER", _MKSTR(0), pp_state);
+		}
+
+		insert_builtin_define("RENDERER_COMPATIBILITY", _MKSTR(0), pp_state);
+		insert_builtin_define("RENDERER_MOBILE", _MKSTR(1), pp_state);
+		insert_builtin_define("RENDERER_FORWARD_PLUS", _MKSTR(2), pp_state);
+	}
+
 	Error err = preprocess(&pp_state, p_code, r_result);
 	if (err != OK) {
 		if (r_error_text) {
@@ -1338,6 +1430,7 @@ void ShaderPreprocessor::get_keyword_list(List<String> *r_keywords, bool p_inclu
 		r_keywords->push_back("else");
 	}
 	r_keywords->push_back("endif");
+	r_keywords->push_back("error");
 	if (p_include_shader_keywords) {
 		r_keywords->push_back("if");
 	}

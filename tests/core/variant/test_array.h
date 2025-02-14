@@ -304,13 +304,31 @@ TEST_CASE("[Array] slice()") {
 	CHECK(slice8[1] == Variant(3));
 	CHECK(slice8[2] == Variant(1));
 
-	ERR_PRINT_OFF;
-	Array slice9 = array.slice(4, 1);
-	CHECK(slice9.size() == 0);
+	Array slice9 = array.slice(10, 0, -2);
+	CHECK(slice9.size() == 3);
+	CHECK(slice9[0] == Variant(5));
+	CHECK(slice9[1] == Variant(3));
+	CHECK(slice9[2] == Variant(1));
 
-	Array slice10 = array.slice(3, -4);
-	CHECK(slice10.size() == 0);
+	Array slice10 = array.slice(2, -10, -1);
+	CHECK(slice10.size() == 3);
+	CHECK(slice10[0] == Variant(2));
+	CHECK(slice10[1] == Variant(1));
+	CHECK(slice10[2] == Variant(0));
+
+	ERR_PRINT_OFF;
+	Array slice11 = array.slice(4, 1);
+	CHECK(slice11.size() == 0);
+
+	Array slice12 = array.slice(3, -4);
+	CHECK(slice12.size() == 0);
 	ERR_PRINT_ON;
+
+	Array slice13 = Array().slice(1);
+	CHECK(slice13.size() == 0);
+
+	Array slice14 = array.slice(6);
+	CHECK(slice14.size() == 0);
 }
 
 TEST_CASE("[Array] Duplicate array") {
@@ -349,7 +367,7 @@ TEST_CASE("[Array] Duplicate recursive array") {
 	Array a_shallow = a.duplicate(false);
 	CHECK_EQ(a, a_shallow);
 
-	// Deep copy of recursive array endup with recursion limit and return
+	// Deep copy of recursive array ends up with recursion limit and return
 	// an invalid result (multiple nested arrays), the point is we should
 	// not end up with a segfault and an error log should be printed
 	ERR_PRINT_OFF;
@@ -525,6 +543,113 @@ TEST_CASE("[Array] Recursive self comparison") {
 	// Break the recursivity otherwise Array tearndown will leak memory
 	a1.clear();
 	a2.clear();
+}
+
+TEST_CASE("[Array] Iteration") {
+	Array a1 = build_array(1, 2, 3);
+	Array a2 = build_array(1, 2, 3);
+
+	int idx = 0;
+	for (Variant &E : a1) {
+		CHECK_EQ(int(a2[idx]), int(E));
+		idx++;
+	}
+
+	CHECK_EQ(idx, a1.size());
+
+	idx = 0;
+
+	for (const Variant &E : (const Array &)a1) {
+		CHECK_EQ(int(a2[idx]), int(E));
+		idx++;
+	}
+
+	CHECK_EQ(idx, a1.size());
+
+	a1.clear();
+}
+
+TEST_CASE("[Array] Iteration and modification") {
+	Array a1 = build_array(1, 2, 3);
+	Array a2 = build_array(2, 3, 4);
+	Array a3 = build_array(1, 2, 3);
+	Array a4 = build_array(1, 2, 3);
+	a3.make_read_only();
+
+	int idx = 0;
+	for (Variant &E : a1) {
+		E = a2[idx];
+		idx++;
+	}
+
+	CHECK_EQ(a1, a2);
+
+	// Ensure read-only is respected.
+	idx = 0;
+	for (Variant &E : a3) {
+		E = a2[idx];
+	}
+
+	CHECK_EQ(a3, a4);
+
+	a1.clear();
+	a2.clear();
+	a4.clear();
+}
+
+TEST_CASE("[Array] Typed copying") {
+	TypedArray<int> a1;
+	a1.push_back(1);
+
+	TypedArray<double> a2;
+	a2.push_back(1.0);
+
+	Array a3 = a1;
+	TypedArray<int> a4 = a3;
+
+	Array a5 = a2;
+	TypedArray<int> a6 = a5;
+
+	a3[0] = 2;
+	a4[0] = 3;
+
+	// Same typed TypedArray should be shared.
+	CHECK_EQ(a1[0], Variant(3));
+	CHECK_EQ(a3[0], Variant(3));
+	CHECK_EQ(a4[0], Variant(3));
+
+	a5[0] = 2.0;
+	a6[0] = 3.0;
+
+	// Different typed TypedArray should not be shared.
+	CHECK_EQ(a2[0], Variant(2.0));
+	CHECK_EQ(a5[0], Variant(2.0));
+	CHECK_EQ(a6[0], Variant(3.0));
+
+	a1.clear();
+	a2.clear();
+	a3.clear();
+	a4.clear();
+	a5.clear();
+	a6.clear();
+}
+
+static bool _find_custom_callable(const Variant &p_val) {
+	return (int)p_val % 2 == 0;
+}
+
+TEST_CASE("[Array] Test find_custom") {
+	Array a1 = build_array(1, 3, 4, 5, 8, 9);
+	// Find first even number.
+	int index = a1.find_custom(callable_mp_static(_find_custom_callable));
+	CHECK_EQ(index, 2);
+}
+
+TEST_CASE("[Array] Test rfind_custom") {
+	Array a1 = build_array(1, 3, 4, 5, 8, 9);
+	// Find last even number.
+	int index = a1.rfind_custom(callable_mp_static(_find_custom_callable));
+	CHECK_EQ(index, 4);
 }
 
 } // namespace TestArray

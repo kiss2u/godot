@@ -36,11 +36,8 @@
 #include "core/templates/local_vector.h"
 #include "core/templates/rb_map.h"
 #include "core/templates/rb_set.h"
-#include "core/typedefs.h"
 
-#include "core/io/resource_loader.h"
-#include "core/os/os.h"
-#include "scene/resources/shader.h"
+#include "core/object/script_language.h"
 #include "scene/resources/shader_include.h"
 
 class ShaderPreprocessor {
@@ -131,6 +128,7 @@ private:
 	struct Define {
 		Vector<String> arguments;
 		String body;
+		bool is_builtin = false;
 	};
 
 	struct Branch {
@@ -190,6 +188,7 @@ private:
 	void process_elif(Tokenizer *p_tokenizer);
 	void process_else(Tokenizer *p_tokenizer);
 	void process_endif(Tokenizer *p_tokenizer);
+	void process_error(Tokenizer *p_tokenizer);
 	void process_if(Tokenizer *p_tokenizer);
 	void process_ifdef(Tokenizer *p_tokenizer);
 	void process_ifndef(Tokenizer *p_tokenizer);
@@ -205,12 +204,14 @@ private:
 	Error expand_macros(const String &p_string, int p_line, String &r_result);
 	bool expand_macros_once(const String &p_line, int p_line_number, const RBMap<String, Define *>::Element *p_define_pair, String &r_expanded);
 	bool find_match(const String &p_string, const String &p_value, int &r_index, int &r_index_start);
+	void concatenate_macro_body(String &r_body);
 
 	String next_directive(Tokenizer *p_tokenizer, const Vector<String> &p_directives);
 	void add_to_output(const String &p_str);
 	void set_error(const String &p_error, int p_line);
 
 	static Define *create_define(const String &p_body);
+	void insert_builtin_define(String p_name, String p_value, State &p_state);
 
 	void clear_state();
 

@@ -30,15 +30,16 @@
 
 #include "resource_saver_webp.h"
 
+#include "webp_common.h"
+
 #include "core/io/file_access.h"
 #include "core/io/image.h"
-#include "scene/resources/texture.h"
-#include "webp_common.h"
+#include "scene/resources/image_texture.h"
 
 Error ResourceSaverWebP::save(const Ref<Resource> &p_resource, const String &p_path, uint32_t p_flags) {
 	Ref<ImageTexture> texture = p_resource;
 
-	ERR_FAIL_COND_V_MSG(!texture.is_valid(), ERR_INVALID_PARAMETER, "Can't save invalid texture as WebP.");
+	ERR_FAIL_COND_V_MSG(texture.is_null(), ERR_INVALID_PARAMETER, "Can't save invalid texture as WebP.");
 	ERR_FAIL_COND_V_MSG(!texture->get_width(), ERR_INVALID_PARAMETER, "Can't save empty texture as WebP.");
 
 	Ref<Image> img = texture->get_image();

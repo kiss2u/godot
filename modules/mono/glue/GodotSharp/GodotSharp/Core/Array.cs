@@ -5,6 +5,9 @@ using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using Godot.NativeInterop;
+using System.Diagnostics;
+
+#nullable enable
 
 namespace Godot.Collections
 {
@@ -14,7 +17,11 @@ namespace Godot.Collections
     /// interfacing with the engine. Otherwise prefer .NET collections
     /// such as <see cref="System.Array"/> or <see cref="List{T}"/>.
     /// </summary>
+    [DebuggerTypeProxy(typeof(ArrayDebugView<Variant>))]
+    [DebuggerDisplay("Count = {Count}")]
+#pragma warning disable CA1710 // Identifiers should have correct suffix
     public sealed class Array :
+#pragma warning restore CA1710
         IList<Variant>,
         IReadOnlyList<Variant>,
         ICollection,
@@ -22,7 +29,7 @@ namespace Godot.Collections
     {
         internal godot_array.movable NativeValue;
 
-        private WeakReference<IDisposable> _weakReferenceToSelf;
+        private WeakReference<IDisposable>? _weakReferenceToSelf;
 
         /// <summary>
         /// Constructs a new empty <see cref="Array"/>.
@@ -36,12 +43,14 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a new <see cref="Array"/> from the given collection's elements.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="collection"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="collection">The collection of elements to construct from.</param>
         /// <returns>A new Godot Array.</returns>
         public Array(IEnumerable<Variant> collection) : this()
         {
-            if (collection == null)
-                throw new ArgumentNullException(nameof(collection));
+            ArgumentNullException.ThrowIfNull(collection);
 
             foreach (Variant element in collection)
                 Add(element);
@@ -50,9 +59,34 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a new <see cref="Array"/> from the given objects.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="array">The objects to put in the new array.</param>
         /// <returns>A new Godot Array.</returns>
-        public Array(Variant[] array) : this()
+        public Array(Variant[] array)
+        {
+            ArgumentNullException.ThrowIfNull(array);
+
+            NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
+            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
+
+            int length = array.Length;
+
+            Resize(length);
+
+            for (int i = 0; i < length; i++)
+                this[i] = array[i];
+        }
+
+        /// <summary>
+        /// Constructs a new <see cref="Array"/> from the given span's elements.
+        /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
+        /// <returns>A new Godot Array.</returns>
+        public Array(Span<StringName> array)
         {
             if (array == null)
                 throw new ArgumentNullException(nameof(array));
@@ -68,7 +102,14 @@ namespace Godot.Collections
                 this[i] = array[i];
         }
 
-        public Array(Span<StringName> array) : this()
+        /// <summary>
+        /// Constructs a new <see cref="Array"/> from the given span's elements.
+        /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
+        /// <returns>A new Godot Array.</returns>
+        public Array(Span<NodePath> array)
         {
             if (array == null)
                 throw new ArgumentNullException(nameof(array));
@@ -84,23 +125,14 @@ namespace Godot.Collections
                 this[i] = array[i];
         }
 
-        public Array(Span<NodePath> array) : this()
-        {
-            if (array == null)
-                throw new ArgumentNullException(nameof(array));
-
-            NativeValue = (godot_array.movable)NativeFuncs.godotsharp_array_new();
-            _weakReferenceToSelf = DisposablesTracker.RegisterDisposable(this);
-
-            int length = array.Length;
-
-            Resize(length);
-
-            for (int i = 0; i < length; i++)
-                this[i] = array[i];
-        }
-
-        public Array(Span<Rid> array) : this()
+        /// <summary>
+        /// Constructs a new <see cref="Array"/> from the given span's elements.
+        /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
+        /// <returns>A new Godot Array.</returns>
+        public Array(Span<Rid> array)
         {
             if (array == null)
                 throw new ArgumentNullException(nameof(array));
@@ -120,8 +152,14 @@ namespace Godot.Collections
         // from derived types (e.g.: Node[]). Implicit conversion from Derived[] to Base[] are
         // fine as long as the array is not mutated. However, Span does this type checking at
         // instantiation, so it's not possible to use it even when not mutating anything.
-        // ReSharper disable once RedundantNameQualifier
-        public Array(ReadOnlySpan<GodotObject> array) : this()
+        /// <summary>
+        /// Constructs a new <see cref="Array"/> from the given ReadOnlySpan's elements.
+        /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
+        /// <returns>A new Godot Array.</returns>
+        public Array(ReadOnlySpan<GodotObject> array)
         {
             if (array == null)
                 throw new ArgumentNullException(nameof(array));
@@ -861,8 +899,14 @@ namespace Godot.Collections
         /// Copies the elements of this <see cref="Array"/> to the given
         /// <see cref="Variant"/> C# array, starting at the given index.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
         /// <exception cref="ArgumentOutOfRangeException">
         /// <paramref name="arrayIndex"/> is less than 0 or greater than the array's size.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// The destination array was not long enough.
         /// </exception>
         /// <param name="array">The array to copy to.</param>
         /// <param name="arrayIndex">The index to start at.</param>
@@ -997,7 +1041,11 @@ namespace Godot.Collections
     /// such as arrays or <see cref="List{T}"/>.
     /// </summary>
     /// <typeparam name="T">The type of the array.</typeparam>
+    [DebuggerTypeProxy(typeof(ArrayDebugView<>))]
+    [DebuggerDisplay("Count = {Count}")]
     [SuppressMessage("ReSharper", "RedundantExtendsListEntry")]
+    [SuppressMessage("Design", "CA1001", MessageId = "Types that own disposable fields should be disposable",
+            Justification = "Known issue. Requires explicit refcount management to not dispose untyped collections.")]
     [SuppressMessage("Naming", "CA1710", MessageId = "Identifiers should have correct suffix")]
     public sealed class Array<[MustBeVariant] T> :
         IList<T>,
@@ -1006,16 +1054,32 @@ namespace Godot.Collections
         IEnumerable<T>,
         IGenericGodotArray
     {
-        private static godot_variant ToVariantFunc(in Array<T> godotArray) =>
+        private static godot_variant ToVariantFunc(scoped in Array<T> godotArray) =>
             VariantUtils.CreateFromArray(godotArray);
 
         private static Array<T> FromVariantFunc(in godot_variant variant) =>
             VariantUtils.ConvertToArray<T>(variant);
 
+        private void SetTypedForUnderlyingArray()
+        {
+            Marshaling.GetTypedCollectionParameterInfo<T>(out var elemVariantType, out var elemClassName, out var elemScriptRef);
+
+            var self = (godot_array)NativeValue;
+
+            using (elemScriptRef)
+            {
+                NativeFuncs.godotsharp_array_set_typed(
+                    ref self,
+                    (uint)elemVariantType,
+                    elemClassName,
+                    elemScriptRef);
+            }
+        }
+
         static unsafe Array()
         {
-            VariantUtils.GenericConversion<Array<T>>.ToVariantCb = &ToVariantFunc;
-            VariantUtils.GenericConversion<Array<T>>.FromVariantCb = &FromVariantFunc;
+            VariantUtils.GenericConversion<Array<T>>.ToVariantCb = ToVariantFunc;
+            VariantUtils.GenericConversion<Array<T>>.FromVariantCb = FromVariantFunc;
         }
 
         private readonly Array _underlyingArray;
@@ -1031,22 +1095,27 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a new empty <see cref="Array{T}"/>.
         /// </summary>
+        /// <returns>A new Godot Array.</returns>
         public Array()
         {
             _underlyingArray = new Array();
+            SetTypedForUnderlyingArray();
         }
 
         /// <summary>
         /// Constructs a new <see cref="Array{T}"/> from the given collection's elements.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="collection"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="collection">The collection of elements to construct from.</param>
         /// <returns>A new Godot Array.</returns>
         public Array(IEnumerable<T> collection)
         {
-            if (collection == null)
-                throw new ArgumentNullException(nameof(collection));
+            ArgumentNullException.ThrowIfNull(collection);
 
             _underlyingArray = new Array();
+            SetTypedForUnderlyingArray();
 
             foreach (T element in collection)
                 Add(element);
@@ -1055,14 +1124,17 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a new <see cref="Array{T}"/> from the given items.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="array">The items to put in the new array.</param>
         /// <returns>A new Godot Array.</returns>
-        public Array(T[] array) : this()
+        public Array(T[] array)
         {
-            if (array == null)
-                throw new ArgumentNullException(nameof(array));
+            ArgumentNullException.ThrowIfNull(array);
 
             _underlyingArray = new Array();
+            SetTypedForUnderlyingArray();
 
             foreach (T element in array)
                 Add(element);
@@ -1071,9 +1143,15 @@ namespace Godot.Collections
         /// <summary>
         /// Constructs a typed <see cref="Array{T}"/> from an untyped <see cref="Array"/>.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
         /// <param name="array">The untyped array to construct from.</param>
+        /// <returns>A new Godot Array.</returns>
         public Array(Array array)
         {
+            ArgumentNullException.ThrowIfNull(array);
+
             _underlyingArray = array;
         }
 
@@ -1085,7 +1163,9 @@ namespace Godot.Collections
         /// Converts this typed <see cref="Array{T}"/> to an untyped <see cref="Array"/>.
         /// </summary>
         /// <param name="from">The typed array to convert.</param>
-        public static explicit operator Array(Array<T> from)
+        /// <returns>A new Godot Array, or <see langword="null"/> if <see paramref="from"/> was null.</returns>
+        [return: NotNullIfNotNull("from")]
+        public static explicit operator Array?(Array<T>? from)
         {
             return from?._underlyingArray;
         }
@@ -1695,8 +1775,14 @@ namespace Godot.Collections
         /// Copies the elements of this <see cref="Array{T}"/> to the given
         /// C# array, starting at the given index.
         /// </summary>
+        /// <exception cref="ArgumentNullException">
+        /// The <paramref name="array"/> is <see langword="null"/>.
+        /// </exception>
         /// <exception cref="ArgumentOutOfRangeException">
         /// <paramref name="arrayIndex"/> is less than 0 or greater than the array's size.
+        /// </exception>
+        /// <exception cref="ArgumentException">
+        /// The destination array was not long enough.
         /// </exception>
         /// <param name="array">The C# array to copy to.</param>
         /// <param name="arrayIndex">The index to start at.</param>

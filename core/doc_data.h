@@ -34,22 +34,13 @@
 #include "core/io/xml_parser.h"
 #include "core/variant/variant.h"
 
-struct ScriptMemberInfo {
-	PropertyInfo propinfo;
-	String doc_string;
-	StringName setter;
-	StringName getter;
-
-	bool has_default_value = false;
-	Variant default_value;
-};
-
 class DocData {
 public:
 	struct ArgumentDoc {
 		String name;
 		String type;
 		String enumeration;
+		bool is_bitfield = false;
 		String default_value;
 		bool operator<(const ArgumentDoc &p_arg) const {
 			if (name == p_arg.name) {
@@ -70,6 +61,9 @@ public:
 
 			if (p_dict.has("enumeration")) {
 				doc.enumeration = p_dict["enumeration"];
+				if (p_dict.has("is_bitfield")) {
+					doc.is_bitfield = p_dict["is_bitfield"];
+				}
 			}
 
 			if (p_dict.has("default_value")) {
@@ -91,6 +85,7 @@ public:
 
 			if (!p_doc.enumeration.is_empty()) {
 				dict["enumeration"] = p_doc.enumeration;
+				dict["is_bitfield"] = p_doc.is_bitfield;
 			}
 
 			if (!p_doc.default_value.is_empty()) {
@@ -105,12 +100,16 @@ public:
 		String name;
 		String return_type;
 		String return_enum;
+		bool return_is_bitfield = false;
 		String qualifiers;
 		String description;
 		bool is_deprecated = false;
+		String deprecated_message;
 		bool is_experimental = false;
+		String experimental_message;
 		Vector<ArgumentDoc> arguments;
 		Vector<int> errors_returned;
+		String keywords;
 		bool operator<(const MethodDoc &p_method) const {
 			if (name == p_method.name) {
 				// Must be an operator or a constructor since there is no other overloading
@@ -152,6 +151,9 @@ public:
 
 			if (p_dict.has("return_enum")) {
 				doc.return_enum = p_dict["return_enum"];
+				if (p_dict.has("return_is_bitfield")) {
+					doc.return_is_bitfield = p_dict["return_is_bitfield"];
+				}
 			}
 
 			if (p_dict.has("qualifiers")) {
@@ -162,12 +164,24 @@ public:
 				doc.description = p_dict["description"];
 			}
 
+#ifndef DISABLE_DEPRECATED
 			if (p_dict.has("is_deprecated")) {
 				doc.is_deprecated = p_dict["is_deprecated"];
 			}
 
 			if (p_dict.has("is_experimental")) {
 				doc.is_experimental = p_dict["is_experimental"];
+			}
+#endif
+
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
 			}
 
 			Array arguments;
@@ -186,6 +200,10 @@ public:
 				doc.errors_returned.push_back(errors_returned[i]);
 			}
 
+			if (p_dict.has("keywords")) {
+				doc.keywords = p_dict["keywords"];
+			}
+
 			return doc;
 		}
 		static Dictionary to_dict(const MethodDoc &p_doc) {
@@ -201,6 +219,7 @@ public:
 
 			if (!p_doc.return_enum.is_empty()) {
 				dict["return_enum"] = p_doc.return_enum;
+				dict["return_is_bitfield"] = p_doc.return_is_bitfield;
 			}
 
 			if (!p_doc.qualifiers.is_empty()) {
@@ -211,9 +230,17 @@ public:
 				dict["description"] = p_doc.description;
 			}
 
-			dict["is_deprecated"] = p_doc.is_deprecated;
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
 
-			dict["is_experimental"] = p_doc.is_experimental;
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
+
+			if (!p_doc.keywords.is_empty()) {
+				dict["keywords"] = p_doc.keywords;
+			}
 
 			if (!p_doc.arguments.is_empty()) {
 				Array arguments;
@@ -239,11 +266,15 @@ public:
 		String name;
 		String value;
 		bool is_value_valid = false;
+		String type;
 		String enumeration;
 		bool is_bitfield = false;
 		String description;
 		bool is_deprecated = false;
+		String deprecated_message;
 		bool is_experimental = false;
+		String experimental_message;
+		String keywords;
 		bool operator<(const ConstantDoc &p_const) const {
 			return name < p_const.name;
 		}
@@ -262,24 +293,43 @@ public:
 				doc.is_value_valid = p_dict["is_value_valid"];
 			}
 
-			if (p_dict.has("enumeration")) {
-				doc.enumeration = p_dict["enumeration"];
+			if (p_dict.has("type")) {
+				doc.type = p_dict["type"];
 			}
 
-			if (p_dict.has("is_bitfield")) {
-				doc.is_bitfield = p_dict["is_bitfield"];
+			if (p_dict.has("enumeration")) {
+				doc.enumeration = p_dict["enumeration"];
+				if (p_dict.has("is_bitfield")) {
+					doc.is_bitfield = p_dict["is_bitfield"];
+				}
 			}
 
 			if (p_dict.has("description")) {
 				doc.description = p_dict["description"];
 			}
 
+#ifndef DISABLE_DEPRECATED
 			if (p_dict.has("is_deprecated")) {
 				doc.is_deprecated = p_dict["is_deprecated"];
 			}
 
 			if (p_dict.has("is_experimental")) {
 				doc.is_experimental = p_dict["is_experimental"];
+			}
+#endif
+
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
+			}
+
+			if (p_dict.has("keywords")) {
+				doc.keywords = p_dict["keywords"];
 			}
 
 			return doc;
@@ -297,19 +347,28 @@ public:
 
 			dict["is_value_valid"] = p_doc.is_value_valid;
 
+			dict["type"] = p_doc.type;
+
 			if (!p_doc.enumeration.is_empty()) {
 				dict["enumeration"] = p_doc.enumeration;
+				dict["is_bitfield"] = p_doc.is_bitfield;
 			}
-
-			dict["is_bitfield"] = p_doc.is_bitfield;
 
 			if (!p_doc.description.is_empty()) {
 				dict["description"] = p_doc.description;
 			}
 
-			dict["is_deprecated"] = p_doc.is_deprecated;
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
 
-			dict["is_experimental"] = p_doc.is_experimental;
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
+
+			if (!p_doc.keywords.is_empty()) {
+				dict["keywords"] = p_doc.keywords;
+			}
 
 			return dict;
 		}
@@ -319,13 +378,17 @@ public:
 		String name;
 		String type;
 		String enumeration;
+		bool is_bitfield = false;
 		String description;
 		String setter, getter;
 		String default_value;
 		bool overridden = false;
 		String overrides;
 		bool is_deprecated = false;
+		String deprecated_message;
 		bool is_experimental = false;
+		String experimental_message;
+		String keywords;
 		bool operator<(const PropertyDoc &p_prop) const {
 			return name.naturalcasecmp_to(p_prop.name) < 0;
 		}
@@ -342,6 +405,9 @@ public:
 
 			if (p_dict.has("enumeration")) {
 				doc.enumeration = p_dict["enumeration"];
+				if (p_dict.has("is_bitfield")) {
+					doc.is_bitfield = p_dict["is_bitfield"];
+				}
 			}
 
 			if (p_dict.has("description")) {
@@ -368,12 +434,28 @@ public:
 				doc.overrides = p_dict["overrides"];
 			}
 
+#ifndef DISABLE_DEPRECATED
 			if (p_dict.has("is_deprecated")) {
 				doc.is_deprecated = p_dict["is_deprecated"];
 			}
 
 			if (p_dict.has("is_experimental")) {
 				doc.is_experimental = p_dict["is_experimental"];
+			}
+#endif
+
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
+			}
+
+			if (p_dict.has("keywords")) {
+				doc.keywords = p_dict["keywords"];
 			}
 
 			return doc;
@@ -391,6 +473,7 @@ public:
 
 			if (!p_doc.enumeration.is_empty()) {
 				dict["enumeration"] = p_doc.enumeration;
+				dict["is_bitfield"] = p_doc.is_bitfield;
 			}
 
 			if (!p_doc.description.is_empty()) {
@@ -415,9 +498,17 @@ public:
 				dict["overrides"] = p_doc.overrides;
 			}
 
-			dict["is_deprecated"] = p_doc.is_deprecated;
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
 
-			dict["is_experimental"] = p_doc.is_experimental;
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
+
+			if (!p_doc.keywords.is_empty()) {
+				dict["keywords"] = p_doc.keywords;
+			}
 
 			return dict;
 		}
@@ -428,7 +519,12 @@ public:
 		String type;
 		String data_type;
 		String description;
+		bool is_deprecated = false;
+		String deprecated_message;
+		bool is_experimental = false;
+		String experimental_message;
 		String default_value;
+		String keywords;
 		bool operator<(const ThemeItemDoc &p_theme_item) const {
 			// First sort by the data type, then by name.
 			if (data_type == p_theme_item.data_type) {
@@ -455,8 +551,22 @@ public:
 				doc.description = p_dict["description"];
 			}
 
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
+			}
+
 			if (p_dict.has("default_value")) {
 				doc.default_value = p_dict["default_value"];
+			}
+
+			if (p_dict.has("keywords")) {
+				doc.keywords = p_dict["keywords"];
 			}
 
 			return doc;
@@ -480,8 +590,20 @@ public:
 				dict["description"] = p_doc.description;
 			}
 
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
+
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
+
 			if (!p_doc.default_value.is_empty()) {
 				dict["default_value"] = p_doc.default_value;
+			}
+
+			if (!p_doc.keywords.is_empty()) {
+				dict["keywords"] = p_doc.keywords;
 			}
 
 			return dict;
@@ -519,23 +641,80 @@ public:
 		}
 	};
 
+	struct EnumDoc {
+		String description;
+		bool is_deprecated = false;
+		String deprecated_message;
+		bool is_experimental = false;
+		String experimental_message;
+		static EnumDoc from_dict(const Dictionary &p_dict) {
+			EnumDoc doc;
+
+			if (p_dict.has("description")) {
+				doc.description = p_dict["description"];
+			}
+
+#ifndef DISABLE_DEPRECATED
+			if (p_dict.has("is_deprecated")) {
+				doc.is_deprecated = p_dict["is_deprecated"];
+			}
+
+			if (p_dict.has("is_experimental")) {
+				doc.is_experimental = p_dict["is_experimental"];
+			}
+#endif
+
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
+			}
+
+			return doc;
+		}
+		static Dictionary to_dict(const EnumDoc &p_doc) {
+			Dictionary dict;
+
+			if (!p_doc.description.is_empty()) {
+				dict["description"] = p_doc.description;
+			}
+
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
+
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
+
+			return dict;
+		}
+	};
+
 	struct ClassDoc {
 		String name;
 		String inherits;
 		String brief_description;
 		String description;
+		String keywords;
 		Vector<TutorialDoc> tutorials;
 		Vector<MethodDoc> constructors;
 		Vector<MethodDoc> methods;
 		Vector<MethodDoc> operators;
 		Vector<MethodDoc> signals;
 		Vector<ConstantDoc> constants;
-		HashMap<String, String> enums;
+		HashMap<String, EnumDoc> enums;
 		Vector<PropertyDoc> properties;
 		Vector<MethodDoc> annotations;
 		Vector<ThemeItemDoc> theme_properties;
 		bool is_deprecated = false;
+		String deprecated_message;
 		bool is_experimental = false;
+		String experimental_message;
 		bool is_script_doc = false;
 		String script_path;
 		bool operator<(const ClassDoc &p_class) const {
@@ -558,6 +737,10 @@ public:
 
 			if (p_dict.has("description")) {
 				doc.description = p_dict["description"];
+			}
+
+			if (p_dict.has("keywords")) {
+				doc.keywords = p_dict["keywords"];
 			}
 
 			Array tutorials;
@@ -613,7 +796,7 @@ public:
 				enums = p_dict["enums"];
 			}
 			for (int i = 0; i < enums.size(); i++) {
-				doc.enums[enums.get_key_at_index(i)] = enums.get_value_at_index(i);
+				doc.enums[enums.get_key_at_index(i)] = EnumDoc::from_dict(enums.get_value_at_index(i));
 			}
 
 			Array properties;
@@ -640,12 +823,24 @@ public:
 				doc.theme_properties.push_back(ThemeItemDoc::from_dict(theme_properties[i]));
 			}
 
+#ifndef DISABLE_DEPRECATED
 			if (p_dict.has("is_deprecated")) {
 				doc.is_deprecated = p_dict["is_deprecated"];
 			}
 
 			if (p_dict.has("is_experimental")) {
 				doc.is_experimental = p_dict["is_experimental"];
+			}
+#endif
+
+			if (p_dict.has("deprecated")) {
+				doc.is_deprecated = true;
+				doc.deprecated_message = p_dict["deprecated"];
+			}
+
+			if (p_dict.has("experimental")) {
+				doc.is_experimental = true;
+				doc.experimental_message = p_dict["experimental"];
 			}
 
 			if (p_dict.has("is_script_doc")) {
@@ -727,8 +922,8 @@ public:
 
 			if (!p_doc.enums.is_empty()) {
 				Dictionary enums;
-				for (const KeyValue<String, String> &E : p_doc.enums) {
-					enums[E.key] = E.value;
+				for (const KeyValue<String, EnumDoc> &E : p_doc.enums) {
+					enums[E.key] = EnumDoc::to_dict(E.value);
 				}
 				dict["enums"] = enums;
 			}
@@ -757,14 +952,22 @@ public:
 				dict["theme_properties"] = theme_properties;
 			}
 
-			dict["is_deprecated"] = p_doc.is_deprecated;
+			if (p_doc.is_deprecated) {
+				dict["deprecated"] = p_doc.deprecated_message;
+			}
 
-			dict["is_experimental"] = p_doc.is_experimental;
+			if (p_doc.is_experimental) {
+				dict["experimental"] = p_doc.experimental_message;
+			}
 
 			dict["is_script_doc"] = p_doc.is_script_doc;
 
 			if (!p_doc.script_path.is_empty()) {
 				dict["script_path"] = p_doc.script_path;
+			}
+
+			if (!p_doc.keywords.is_empty()) {
+				dict["keywords"] = p_doc.keywords;
 			}
 
 			return dict;
@@ -775,10 +978,7 @@ public:
 
 	static void return_doc_from_retinfo(DocData::MethodDoc &p_method, const PropertyInfo &p_retinfo);
 	static void argument_doc_from_arginfo(DocData::ArgumentDoc &p_argument, const PropertyInfo &p_arginfo);
-	static void property_doc_from_scriptmemberinfo(DocData::PropertyDoc &p_property, const ScriptMemberInfo &p_memberinfo);
 	static void method_doc_from_methodinfo(DocData::MethodDoc &p_method, const MethodInfo &p_methodinfo, const String &p_desc);
-	static void constant_doc_from_variant(DocData::ConstantDoc &p_const, const StringName &p_name, const Variant &p_value, const String &p_desc);
-	static void signal_doc_from_methodinfo(DocData::MethodDoc &p_signal, const MethodInfo &p_methodinfo, const String &p_desc);
 };
 
 #endif // DOC_DATA_H

@@ -41,6 +41,7 @@ class NavigationRegion3D : public Node3D {
 	bool use_edge_connections = true;
 
 	RID region;
+	RID map_override;
 	uint32_t navigation_layers = 1;
 	real_t enter_cost = 0.0;
 	real_t travel_cost = 1.0;
@@ -48,9 +49,9 @@ class NavigationRegion3D : public Node3D {
 
 	Transform3D current_global_transform;
 
-	Thread bake_thread;
+	void _navigation_mesh_changed();
 
-	void _navigation_changed();
+	AABB bounds;
 
 #ifdef DEBUG_ENABLED
 	RID debug_instance;
@@ -62,6 +63,7 @@ private:
 	void _update_debug_mesh();
 	void _update_debug_edge_connections_mesh();
 	void _navigation_map_changed(RID p_map);
+	void _navigation_debug_changed();
 #endif // DEBUG_ENABLED
 
 protected:
@@ -74,8 +76,13 @@ protected:
 #endif // DISABLE_DEPRECATED
 
 public:
+	RID get_rid() const;
+
 	void set_enabled(bool p_enabled);
 	bool is_enabled() const;
+
+	void set_navigation_map(RID p_navigation_map);
+	RID get_navigation_map() const;
 
 	void set_use_edge_connections(bool p_enabled);
 	bool get_use_edge_connections() const;
@@ -101,11 +108,20 @@ public:
 	/// sets the new navigation mesh and emits a signal
 	void bake_navigation_mesh(bool p_on_thread);
 	void _bake_finished(Ref<NavigationMesh> p_navigation_mesh);
+	bool is_baking() const;
 
 	PackedStringArray get_configuration_warnings() const override;
 
+	AABB get_bounds() const { return bounds; }
+
 	NavigationRegion3D();
 	~NavigationRegion3D();
+
+private:
+	void _update_bounds();
+	void _region_enter_navigation_map();
+	void _region_exit_navigation_map();
+	void _region_update_transform();
 };
 
 #endif // NAVIGATION_REGION_3D_H

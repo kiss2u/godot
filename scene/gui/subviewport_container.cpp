@@ -45,8 +45,7 @@ Size2 SubViewportContainer::get_minimum_size() const {
 		}
 
 		Size2 minsize = c->get_size();
-		ms.width = MAX(ms.width, minsize.width);
-		ms.height = MAX(ms.height, minsize.height);
+		ms = ms.max(minsize);
 	}
 
 	return ms;
@@ -147,12 +146,16 @@ void SubViewportContainer::_notification(int p_what) {
 			}
 		} break;
 
-		case NOTIFICATION_MOUSE_ENTER: {
-			_notify_viewports(NOTIFICATION_VP_MOUSE_ENTER);
+		case NOTIFICATION_FOCUS_ENTER: {
+			// If focused, send InputEvent to the SubViewport before the Gui-Input stage.
+			set_process_input(true);
+			set_process_unhandled_input(false);
 		} break;
 
-		case NOTIFICATION_MOUSE_EXIT: {
-			_notify_viewports(NOTIFICATION_VP_MOUSE_EXIT);
+		case NOTIFICATION_FOCUS_EXIT: {
+			// A different Control has focus and should receive Gui-Input before the InputEvent is sent to the SubViewport.
+			set_process_input(false);
+			set_process_unhandled_input(true);
 		} break;
 	}
 }
@@ -168,6 +171,14 @@ void SubViewportContainer::_notify_viewports(int p_notification) {
 }
 
 void SubViewportContainer::input(const Ref<InputEvent> &p_event) {
+	_propagate_nonpositional_event(p_event);
+}
+
+void SubViewportContainer::unhandled_input(const Ref<InputEvent> &p_event) {
+	_propagate_nonpositional_event(p_event);
+}
+
+void SubViewportContainer::_propagate_nonpositional_event(const Ref<InputEvent> &p_event) {
 	ERR_FAIL_COND(p_event.is_null());
 
 	if (Engine::get_singleton()->is_editor_hint()) {
@@ -176,6 +187,13 @@ void SubViewportContainer::input(const Ref<InputEvent> &p_event) {
 
 	if (_is_propagated_in_gui_input(p_event)) {
 		return;
+	}
+
+	bool send;
+	if (GDVIRTUAL_CALL(_propagate_input_event, p_event, send)) {
+		if (!send) {
+			return;
+		}
 	}
 
 	_send_event_to_viewports(p_event);
@@ -190,6 +208,13 @@ void SubViewportContainer::gui_input(const Ref<InputEvent> &p_event) {
 
 	if (!_is_propagated_in_gui_input(p_event)) {
 		return;
+	}
+
+	bool send;
+	if (GDVIRTUAL_CALL(_propagate_input_event, p_event, send)) {
+		if (!send) {
+			return;
+		}
 	}
 
 	if (stretch && shrink > 1) {
@@ -221,6 +246,14 @@ bool SubViewportContainer::_is_propagated_in_gui_input(const Ref<InputEvent> &p_
 	return false;
 }
 
+void SubViewportContainer::set_mouse_target(bool p_enable) {
+	mouse_target = p_enable;
+}
+
+bool SubViewportContainer::is_mouse_target_enabled() {
+	return mouse_target;
+}
+
 void SubViewportContainer::add_child_notify(Node *p_child) {
 	if (Object::cast_to<SubViewport>(p_child)) {
 		queue_redraw();
@@ -234,7 +267,7 @@ void SubViewportContainer::remove_child_notify(Node *p_child) {
 }
 
 PackedStringArray SubViewportContainer::get_configuration_warnings() const {
-	PackedStringArray warnings = Node::get_configuration_warnings();
+	PackedStringArray warnings = Container::get_configuration_warnings();
 
 	bool has_viewport = false;
 	for (int i = 0; i < get_child_count(); i++) {
@@ -247,6 +280,10 @@ PackedStringArray SubViewportContainer::get_configuration_warnings() const {
 		warnings.push_back(RTR("This node doesn't have a SubViewport as child, so it can't display its intended content.\nConsider adding a SubViewport as a child to provide something displayable."));
 	}
 
+	if (get_default_cursor_shape() != Control::CURSOR_ARROW) {
+		warnings.push_back(RTR("The default mouse cursor shape of SubViewportContainer has no effect.\nConsider leaving it at its initial value `CURSOR_ARROW`."));
+	}
+
 	return warnings;
 }
 
@@ -257,10 +294,17 @@ void SubViewportContainer::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_stretch_shrink", "amount"), &SubViewportContainer::set_stretch_shrink);
 	ClassDB::bind_method(D_METHOD("get_stretch_shrink"), &SubViewportContainer::get_stretch_shrink);
 
+	ClassDB::bind_method(D_METHOD("set_mouse_target", "amount"), &SubViewportContainer::set_mouse_target);
+	ClassDB::bind_method(D_METHOD("is_mouse_target_enabled"), &SubViewportContainer::is_mouse_target_enabled);
+
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "stretch"), "set_stretch", "is_stretch_enabled");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "stretch_shrink"), "set_stretch_shrink", "get_stretch_shrink");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "stretch_shrink", PROPERTY_HINT_RANGE, "1,32,1,or_greater"), "set_stretch_shrink", "get_stretch_shrink");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "mouse_target"), "set_mouse_target", "is_mouse_target_enabled");
+
+	GDVIRTUAL_BIND(_propagate_input_event, "event");
 }
 
 SubViewportContainer::SubViewportContainer() {
-	set_process_input(true);
+	set_process_unhandled_input(true);
+	set_focus_mode(FOCUS_CLICK);
 }

@@ -33,7 +33,6 @@
 
 #include "core/io/resource.h"
 #include "core/object/gdvirtual.gen.inc"
-#include "core/object/script_language.h"
 
 class CharFXTransform : public RefCounted {
 	GDCLASS(CharFXTransform, RefCounted);
@@ -42,6 +41,7 @@ protected:
 	static void _bind_methods();
 
 public:
+	Transform2D transform;
 	Vector2i range;
 	bool visibility = true;
 	bool outline = false;
@@ -57,6 +57,9 @@ public:
 
 	CharFXTransform();
 	~CharFXTransform();
+
+	void set_transform(const Transform2D &p_transform) { transform = p_transform; }
+	const Transform2D &get_transform() { return transform; }
 
 	Vector2i get_range() { return range; }
 	void set_range(const Vector2i &p_range) { range = p_range; }
@@ -76,20 +79,20 @@ public:
 	Color get_color() { return color; }
 	void set_color(Color p_color) { color = p_color; }
 
-	uint32_t get_glyph_index() const { return glyph_index; };
-	void set_glyph_index(uint32_t p_glyph_index) { glyph_index = p_glyph_index; };
+	uint32_t get_glyph_index() const { return glyph_index; }
+	void set_glyph_index(uint32_t p_glyph_index) { glyph_index = p_glyph_index; }
 
-	uint16_t get_glyph_flags() const { return glyph_flags; };
-	void set_glyph_flags(uint16_t p_glyph_flags) { glyph_flags = p_glyph_flags; };
+	uint16_t get_glyph_flags() const { return glyph_flags; }
+	void set_glyph_flags(uint16_t p_glyph_flags) { glyph_flags = p_glyph_flags; }
 
-	uint8_t get_glyph_count() const { return glyph_count; };
-	void set_glyph_count(uint8_t p_glyph_count) { glyph_count = p_glyph_count; };
+	uint8_t get_glyph_count() const { return glyph_count; }
+	void set_glyph_count(uint8_t p_glyph_count) { glyph_count = p_glyph_count; }
 
-	int32_t get_relative_index() const { return relative_index; };
-	void set_relative_index(int32_t p_relative_index) { relative_index = p_relative_index; };
+	int32_t get_relative_index() const { return relative_index; }
+	void set_relative_index(int32_t p_relative_index) { relative_index = p_relative_index; }
 
-	RID get_font() const { return font; };
-	void set_font(RID p_font) { font = p_font; };
+	RID get_font() const { return font; }
+	void set_font(RID p_font) { font = p_font; }
 
 	Dictionary get_environment() { return environment; }
 	void set_environment(Dictionary p_environment) { environment = p_environment; }

@@ -42,6 +42,7 @@ void TextServerExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_get_support_data_filename);
 	GDVIRTUAL_BIND(_get_support_data_info);
 	GDVIRTUAL_BIND(_save_support_data, "filename");
+	GDVIRTUAL_BIND(_get_support_data);
 
 	GDVIRTUAL_BIND(_is_locale_right_to_left, "locale");
 
@@ -51,6 +52,7 @@ void TextServerExtension::_bind_methods() {
 	/* Font interface */
 
 	GDVIRTUAL_BIND(_create_font);
+	GDVIRTUAL_BIND(_create_font_linked_variation, "font_rid");
 
 	GDVIRTUAL_BIND(_font_set_data, "font_rid", "data");
 	GDVIRTUAL_BIND(_font_set_data_ptr, "font_rid", "data_ptr", "data_size");
@@ -79,6 +81,9 @@ void TextServerExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_font_set_antialiasing, "font_rid", "antialiasing");
 	GDVIRTUAL_BIND(_font_get_antialiasing, "font_rid");
 
+	GDVIRTUAL_BIND(_font_set_disable_embedded_bitmaps, "font_rid", "disable_embedded_bitmaps");
+	GDVIRTUAL_BIND(_font_get_disable_embedded_bitmaps, "font_rid");
+
 	GDVIRTUAL_BIND(_font_set_generate_mipmaps, "font_rid", "generate_mipmaps");
 	GDVIRTUAL_BIND(_font_get_generate_mipmaps, "font_rid");
 
@@ -94,6 +99,9 @@ void TextServerExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_font_set_fixed_size, "font_rid", "fixed_size");
 	GDVIRTUAL_BIND(_font_get_fixed_size, "font_rid");
 
+	GDVIRTUAL_BIND(_font_set_fixed_size_scale_mode, "font_rid", "fixed_size_scale_mode");
+	GDVIRTUAL_BIND(_font_get_fixed_size_scale_mode, "font_rid");
+
 	GDVIRTUAL_BIND(_font_set_allow_system_fallback, "font_rid", "allow_system_fallback");
 	GDVIRTUAL_BIND(_font_is_allow_system_fallback, "font_rid");
 
@@ -106,8 +114,17 @@ void TextServerExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_font_set_subpixel_positioning, "font_rid", "subpixel_positioning");
 	GDVIRTUAL_BIND(_font_get_subpixel_positioning, "font_rid");
 
+	GDVIRTUAL_BIND(_font_set_keep_rounding_remainders, "font_rid", "keep_rounding_remainders");
+	GDVIRTUAL_BIND(_font_get_keep_rounding_remainders, "font_rid");
+
 	GDVIRTUAL_BIND(_font_set_embolden, "font_rid", "strength");
 	GDVIRTUAL_BIND(_font_get_embolden, "font_rid");
+
+	GDVIRTUAL_BIND(_font_set_spacing, "font_rid", "spacing", "value");
+	GDVIRTUAL_BIND(_font_get_spacing, "font_rid", "spacing");
+
+	GDVIRTUAL_BIND(_font_set_baseline_offset, "font_rid", "baseline_offset");
+	GDVIRTUAL_BIND(_font_get_baseline_offset, "font_rid");
 
 	GDVIRTUAL_BIND(_font_set_transform, "font_rid", "transform");
 	GDVIRTUAL_BIND(_font_get_transform, "font_rid");
@@ -183,6 +200,7 @@ void TextServerExtension::_bind_methods() {
 
 	GDVIRTUAL_BIND(_font_has_char, "font_rid", "char");
 	GDVIRTUAL_BIND(_font_get_supported_chars, "font_rid");
+	GDVIRTUAL_BIND(_font_get_supported_glyphs, "font_rid");
 
 	GDVIRTUAL_BIND(_font_render_range, "font_rid", "size", "start", "end");
 	GDVIRTUAL_BIND(_font_render_glyph, "font_rid", "size", "index");
@@ -229,6 +247,9 @@ void TextServerExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_shaped_text_set_custom_punctuation, "shaped", "punct");
 	GDVIRTUAL_BIND(_shaped_text_get_custom_punctuation, "shaped");
 
+	GDVIRTUAL_BIND(_shaped_text_set_custom_ellipsis, "shaped", "char");
+	GDVIRTUAL_BIND(_shaped_text_get_custom_ellipsis, "shaped");
+
 	GDVIRTUAL_BIND(_shaped_text_set_orientation, "shaped", "orientation");
 	GDVIRTUAL_BIND(_shaped_text_get_orientation, "shaped");
 
@@ -247,6 +268,7 @@ void TextServerExtension::_bind_methods() {
 
 	GDVIRTUAL_BIND(_shaped_get_span_count, "shaped");
 	GDVIRTUAL_BIND(_shaped_get_span_meta, "shaped", "index");
+	GDVIRTUAL_BIND(_shaped_get_span_embedded_object, "shaped", "index");
 	GDVIRTUAL_BIND(_shaped_set_span_update_font, "shaped", "index", "fonts", "size", "opentype_features");
 
 	GDVIRTUAL_BIND(_shaped_text_substr, "shaped", "start", "length");
@@ -269,7 +291,7 @@ void TextServerExtension::_bind_methods() {
 
 	GDVIRTUAL_BIND(_shaped_text_get_line_breaks_adv, "shaped", "width", "start", "once", "break_flags");
 	GDVIRTUAL_BIND(_shaped_text_get_line_breaks, "shaped", "width", "start", "break_flags");
-	GDVIRTUAL_BIND(_shaped_text_get_word_breaks, "shaped", "grapheme_flags");
+	GDVIRTUAL_BIND(_shaped_text_get_word_breaks, "shaped", "grapheme_flags", "skip_grapheme_flags");
 
 	GDVIRTUAL_BIND(_shaped_text_get_trim_pos, "shaped");
 	GDVIRTUAL_BIND(_shaped_text_get_ellipsis_pos, "shaped");
@@ -280,6 +302,8 @@ void TextServerExtension::_bind_methods() {
 
 	GDVIRTUAL_BIND(_shaped_text_get_objects, "shaped");
 	GDVIRTUAL_BIND(_shaped_text_get_object_rect, "shaped", "key");
+	GDVIRTUAL_BIND(_shaped_text_get_object_range, "shaped", "key");
+	GDVIRTUAL_BIND(_shaped_text_get_object_glyph, "shaped", "key");
 
 	GDVIRTUAL_BIND(_shaped_text_get_size, "shaped");
 	GDVIRTUAL_BIND(_shaped_text_get_ascent, "shaped");
@@ -303,20 +327,28 @@ void TextServerExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_shaped_text_next_grapheme_pos, "shaped", "pos");
 	GDVIRTUAL_BIND(_shaped_text_prev_grapheme_pos, "shaped", "pos");
 
-	GDVIRTUAL_BIND(_format_number, "string", "language");
-	GDVIRTUAL_BIND(_parse_number, "string", "language");
+	GDVIRTUAL_BIND(_shaped_text_get_character_breaks, "shaped");
+	GDVIRTUAL_BIND(_shaped_text_next_character_pos, "shaped", "pos");
+	GDVIRTUAL_BIND(_shaped_text_prev_character_pos, "shaped", "pos");
+	GDVIRTUAL_BIND(_shaped_text_closest_character_pos, "shaped", "pos");
+
+	GDVIRTUAL_BIND(_format_number, "number", "language");
+	GDVIRTUAL_BIND(_parse_number, "number", "language");
 	GDVIRTUAL_BIND(_percent_sign, "language");
 
 	GDVIRTUAL_BIND(_strip_diacritics, "string");
 	GDVIRTUAL_BIND(_is_valid_identifier, "string");
+	GDVIRTUAL_BIND(_is_valid_letter, "unicode");
 
 	GDVIRTUAL_BIND(_string_get_word_breaks, "string", "language", "chars_per_line");
+	GDVIRTUAL_BIND(_string_get_character_breaks, "string", "language");
 
 	GDVIRTUAL_BIND(_is_confusable, "string", "dict");
 	GDVIRTUAL_BIND(_spoof_check, "string");
 
 	GDVIRTUAL_BIND(_string_to_upper, "string", "language");
 	GDVIRTUAL_BIND(_string_to_lower, "string", "language");
+	GDVIRTUAL_BIND(_string_to_title, "string", "language");
 
 	GDVIRTUAL_BIND(_parse_structured_text, "parser_type", "args", "text");
 
@@ -375,6 +407,12 @@ bool TextServerExtension::save_support_data(const String &p_filename) const {
 	return ret;
 }
 
+PackedByteArray TextServerExtension::get_support_data() const {
+	PackedByteArray ret;
+	GDVIRTUAL_CALL(_get_support_data, ret);
+	return ret;
+}
+
 bool TextServerExtension::is_locale_right_to_left(const String &p_locale) const {
 	bool ret = false;
 	GDVIRTUAL_CALL(_is_locale_right_to_left, p_locale, ret);
@@ -383,14 +421,18 @@ bool TextServerExtension::is_locale_right_to_left(const String &p_locale) const 
 
 int64_t TextServerExtension::name_to_tag(const String &p_name) const {
 	int64_t ret = 0;
-	GDVIRTUAL_CALL(_name_to_tag, p_name, ret);
-	return ret;
+	if (GDVIRTUAL_CALL(_name_to_tag, p_name, ret)) {
+		return ret;
+	}
+	return TextServer::name_to_tag(p_name);
 }
 
 String TextServerExtension::tag_to_name(int64_t p_tag) const {
 	String ret;
-	GDVIRTUAL_CALL(_tag_to_name, p_tag, ret);
-	return ret;
+	if (GDVIRTUAL_CALL(_tag_to_name, p_tag, ret)) {
+		return ret;
+	}
+	return TextServer::tag_to_name(p_tag);
 }
 
 /*************************************************************************/
@@ -400,6 +442,12 @@ String TextServerExtension::tag_to_name(int64_t p_tag) const {
 RID TextServerExtension::create_font() {
 	RID ret;
 	GDVIRTUAL_CALL(_create_font, ret);
+	return ret;
+}
+
+RID TextServerExtension::create_font_linked_variation(const RID &p_font_rid) {
+	RID ret;
+	GDVIRTUAL_CALL(_create_font_linked_variation, p_font_rid, ret);
 	return ret;
 }
 
@@ -422,7 +470,7 @@ int64_t TextServerExtension::font_get_face_index(const RID &p_font_rid) const {
 }
 
 int64_t TextServerExtension::font_get_face_count(const RID &p_font_rid) const {
-	int64_t ret = 0;
+	int64_t ret = 1;
 	GDVIRTUAL_CALL(_font_get_face_count, p_font_rid, ret);
 	return ret;
 }
@@ -493,6 +541,16 @@ TextServer::FontAntialiasing TextServerExtension::font_get_antialiasing(const RI
 	return ret;
 }
 
+void TextServerExtension::font_set_disable_embedded_bitmaps(const RID &p_font_rid, bool p_disable_embedded_bitmaps) {
+	GDVIRTUAL_CALL(_font_set_disable_embedded_bitmaps, p_font_rid, p_disable_embedded_bitmaps);
+}
+
+bool TextServerExtension::font_get_disable_embedded_bitmaps(const RID &p_font_rid) const {
+	bool ret = false;
+	GDVIRTUAL_CALL(_font_get_disable_embedded_bitmaps, p_font_rid, ret);
+	return ret;
+}
+
 void TextServerExtension::font_set_generate_mipmaps(const RID &p_font_rid, bool p_generate_mipmaps) {
 	GDVIRTUAL_CALL(_font_set_generate_mipmaps, p_font_rid, p_generate_mipmaps);
 }
@@ -543,6 +601,16 @@ int64_t TextServerExtension::font_get_fixed_size(const RID &p_font_rid) const {
 	return ret;
 }
 
+void TextServerExtension::font_set_fixed_size_scale_mode(const RID &p_font_rid, TextServer::FixedSizeScaleMode p_fixed_size_scale_mode) {
+	GDVIRTUAL_CALL(_font_set_fixed_size_scale_mode, p_font_rid, p_fixed_size_scale_mode);
+}
+
+TextServer::FixedSizeScaleMode TextServerExtension::font_get_fixed_size_scale_mode(const RID &p_font_rid) const {
+	FixedSizeScaleMode ret = FIXED_SIZE_SCALE_DISABLE;
+	GDVIRTUAL_CALL(_font_get_fixed_size_scale_mode, p_font_rid, ret);
+	return ret;
+}
+
 void TextServerExtension::font_set_allow_system_fallback(const RID &p_font_rid, bool p_allow_system_fallback) {
 	GDVIRTUAL_CALL(_font_set_allow_system_fallback, p_font_rid, p_allow_system_fallback);
 }
@@ -583,6 +651,16 @@ TextServer::SubpixelPositioning TextServerExtension::font_get_subpixel_positioni
 	return ret;
 }
 
+void TextServerExtension::font_set_keep_rounding_remainders(const RID &p_font_rid, bool p_keep_rounding_remainders) {
+	GDVIRTUAL_CALL(_font_set_keep_rounding_remainders, p_font_rid, p_keep_rounding_remainders);
+}
+
+bool TextServerExtension::font_get_keep_rounding_remainders(const RID &p_font_rid) const {
+	bool ret = true;
+	GDVIRTUAL_CALL(_font_get_keep_rounding_remainders, p_font_rid, ret);
+	return ret;
+}
+
 void TextServerExtension::font_set_embolden(const RID &p_font_rid, double p_strength) {
 	GDVIRTUAL_CALL(_font_set_embolden, p_font_rid, p_strength);
 }
@@ -590,6 +668,26 @@ void TextServerExtension::font_set_embolden(const RID &p_font_rid, double p_stre
 double TextServerExtension::font_get_embolden(const RID &p_font_rid) const {
 	double ret = 0;
 	GDVIRTUAL_CALL(_font_get_embolden, p_font_rid, ret);
+	return ret;
+}
+
+void TextServerExtension::font_set_spacing(const RID &p_font_rid, SpacingType p_spacing, int64_t p_value) {
+	GDVIRTUAL_CALL(_font_set_spacing, p_font_rid, p_spacing, p_value);
+}
+
+int64_t TextServerExtension::font_get_spacing(const RID &p_font_rid, SpacingType p_spacing) const {
+	int64_t ret = 0;
+	GDVIRTUAL_CALL(_font_get_spacing, p_font_rid, p_spacing, ret);
+	return ret;
+}
+
+void TextServerExtension::font_set_baseline_offset(const RID &p_font_rid, double p_baseline_offset) {
+	GDVIRTUAL_CALL(_font_set_baseline_offset, p_font_rid, p_baseline_offset);
+}
+
+double TextServerExtension::font_get_baseline_offset(const RID &p_font_rid) const {
+	double ret = 0.0;
+	GDVIRTUAL_CALL(_font_get_baseline_offset, p_font_rid, ret);
 	return ret;
 }
 
@@ -851,6 +949,12 @@ String TextServerExtension::font_get_supported_chars(const RID &p_font_rid) cons
 	return ret;
 }
 
+PackedInt32Array TextServerExtension::font_get_supported_glyphs(const RID &p_font_rid) const {
+	PackedInt32Array ret;
+	GDVIRTUAL_CALL(_font_get_supported_glyphs, p_font_rid, ret);
+	return ret;
+}
+
 void TextServerExtension::font_render_range(const RID &p_font_rid, const Vector2i &p_size, int64_t p_start, int64_t p_end) {
 	GDVIRTUAL_CALL(_font_render_range, p_font_rid, p_size, p_start, p_end);
 }
@@ -1019,6 +1123,16 @@ String TextServerExtension::shaped_text_get_custom_punctuation(const RID &p_shap
 	return ret;
 }
 
+void TextServerExtension::shaped_text_set_custom_ellipsis(const RID &p_shaped, int64_t p_char) {
+	GDVIRTUAL_CALL(_shaped_text_set_custom_ellipsis, p_shaped, p_char);
+}
+
+int64_t TextServerExtension::shaped_text_get_custom_ellipsis(const RID &p_shaped) const {
+	int64_t ret = 0;
+	GDVIRTUAL_CALL(_shaped_text_get_custom_ellipsis, p_shaped, ret);
+	return ret;
+}
+
 void TextServerExtension::shaped_text_set_preserve_invalid(const RID &p_shaped, bool p_enabled) {
 	GDVIRTUAL_CALL(_shaped_text_set_preserve_invalid, p_shaped, p_enabled);
 }
@@ -1074,8 +1188,14 @@ int64_t TextServerExtension::shaped_get_span_count(const RID &p_shaped) const {
 }
 
 Variant TextServerExtension::shaped_get_span_meta(const RID &p_shaped, int64_t p_index) const {
-	Variant ret = false;
+	Variant ret;
 	GDVIRTUAL_CALL(_shaped_get_span_meta, p_shaped, p_index, ret);
+	return ret;
+}
+
+Variant TextServerExtension::shaped_get_span_embedded_object(const RID &p_shaped, int64_t p_index) const {
+	Variant ret;
+	GDVIRTUAL_CALL(_shaped_get_span_embedded_object, p_shaped, p_index, ret);
 	return ret;
 }
 
@@ -1171,12 +1291,12 @@ PackedInt32Array TextServerExtension::shaped_text_get_line_breaks(const RID &p_s
 	return TextServer::shaped_text_get_line_breaks(p_shaped, p_width, p_start, p_break_flags);
 }
 
-PackedInt32Array TextServerExtension::shaped_text_get_word_breaks(const RID &p_shaped, BitField<TextServer::GraphemeFlag> p_grapheme_flags) const {
+PackedInt32Array TextServerExtension::shaped_text_get_word_breaks(const RID &p_shaped, BitField<TextServer::GraphemeFlag> p_grapheme_flags, BitField<TextServer::GraphemeFlag> p_skip_grapheme_flags) const {
 	PackedInt32Array ret;
-	if (GDVIRTUAL_CALL(_shaped_text_get_word_breaks, p_shaped, p_grapheme_flags, ret)) {
+	if (GDVIRTUAL_CALL(_shaped_text_get_word_breaks, p_shaped, p_grapheme_flags, p_skip_grapheme_flags, ret)) {
 		return ret;
 	}
-	return TextServer::shaped_text_get_word_breaks(p_shaped, p_grapheme_flags);
+	return TextServer::shaped_text_get_word_breaks(p_shaped, p_grapheme_flags, p_skip_grapheme_flags);
 }
 
 int64_t TextServerExtension::shaped_text_get_trim_pos(const RID &p_shaped) const {
@@ -1216,6 +1336,18 @@ Array TextServerExtension::shaped_text_get_objects(const RID &p_shaped) const {
 Rect2 TextServerExtension::shaped_text_get_object_rect(const RID &p_shaped, const Variant &p_key) const {
 	Rect2 ret;
 	GDVIRTUAL_CALL(_shaped_text_get_object_rect, p_shaped, p_key, ret);
+	return ret;
+}
+
+Vector2i TextServerExtension::shaped_text_get_object_range(const RID &p_shaped, const Variant &p_key) const {
+	Vector2i ret;
+	GDVIRTUAL_CALL(_shaped_text_get_object_range, p_shaped, p_key, ret);
+	return ret;
+}
+
+int64_t TextServerExtension::shaped_text_get_object_glyph(const RID &p_shaped, const Variant &p_key) const {
+	int64_t ret = -1;
+	GDVIRTUAL_CALL(_shaped_text_get_object_glyph, p_shaped, p_key, ret);
 	return ret;
 }
 
@@ -1333,6 +1465,38 @@ int64_t TextServerExtension::shaped_text_prev_grapheme_pos(const RID &p_shaped, 
 	return TextServer::shaped_text_prev_grapheme_pos(p_shaped, p_pos);
 }
 
+PackedInt32Array TextServerExtension::shaped_text_get_character_breaks(const RID &p_shaped) const {
+	PackedInt32Array ret;
+	if (GDVIRTUAL_CALL(_shaped_text_get_character_breaks, p_shaped, ret)) {
+		return ret;
+	}
+	return PackedInt32Array();
+}
+
+int64_t TextServerExtension::shaped_text_next_character_pos(const RID &p_shaped, int64_t p_pos) const {
+	int64_t ret;
+	if (GDVIRTUAL_CALL(_shaped_text_next_character_pos, p_shaped, p_pos, ret)) {
+		return ret;
+	}
+	return TextServer::shaped_text_next_character_pos(p_shaped, p_pos);
+}
+
+int64_t TextServerExtension::shaped_text_prev_character_pos(const RID &p_shaped, int64_t p_pos) const {
+	int64_t ret;
+	if (GDVIRTUAL_CALL(_shaped_text_prev_character_pos, p_shaped, p_pos, ret)) {
+		return ret;
+	}
+	return TextServer::shaped_text_prev_character_pos(p_shaped, p_pos);
+}
+
+int64_t TextServerExtension::shaped_text_closest_character_pos(const RID &p_shaped, int64_t p_pos) const {
+	int64_t ret;
+	if (GDVIRTUAL_CALL(_shaped_text_closest_character_pos, p_shaped, p_pos, ret)) {
+		return ret;
+	}
+	return TextServer::shaped_text_closest_character_pos(p_shaped, p_pos);
+}
+
 String TextServerExtension::format_number(const String &p_string, const String &p_language) const {
 	String ret;
 	if (GDVIRTUAL_CALL(_format_number, p_string, p_language, ret)) {
@@ -1363,6 +1527,14 @@ bool TextServerExtension::is_valid_identifier(const String &p_string) const {
 	return TextServer::is_valid_identifier(p_string);
 }
 
+bool TextServerExtension::is_valid_letter(uint64_t p_unicode) const {
+	bool ret;
+	if (GDVIRTUAL_CALL(_is_valid_letter, p_unicode, ret)) {
+		return ret;
+	}
+	return TextServer::is_valid_letter(p_unicode);
+}
+
 String TextServerExtension::strip_diacritics(const String &p_string) const {
 	String ret;
 	if (GDVIRTUAL_CALL(_strip_diacritics, p_string, ret)) {
@@ -1379,6 +1551,14 @@ String TextServerExtension::string_to_upper(const String &p_string, const String
 	return p_string;
 }
 
+String TextServerExtension::string_to_title(const String &p_string, const String &p_language) const {
+	String ret;
+	if (GDVIRTUAL_CALL(_string_to_title, p_string, p_language, ret)) {
+		return ret;
+	}
+	return p_string;
+}
+
 String TextServerExtension::string_to_lower(const String &p_string, const String &p_language) const {
 	String ret;
 	if (GDVIRTUAL_CALL(_string_to_lower, p_string, p_language, ret)) {
@@ -1389,14 +1569,24 @@ String TextServerExtension::string_to_lower(const String &p_string, const String
 
 TypedArray<Vector3i> TextServerExtension::parse_structured_text(StructuredTextParser p_parser_type, const Array &p_args, const String &p_text) const {
 	TypedArray<Vector3i> ret;
-	GDVIRTUAL_CALL(_parse_structured_text, p_parser_type, p_args, p_text, ret);
-	return ret;
+	if (GDVIRTUAL_CALL(_parse_structured_text, p_parser_type, p_args, p_text, ret)) {
+		return ret;
+	}
+	return TextServer::parse_structured_text(p_parser_type, p_args, p_text);
 }
 
 PackedInt32Array TextServerExtension::string_get_word_breaks(const String &p_string, const String &p_language, int64_t p_chars_per_line) const {
 	PackedInt32Array ret;
 	GDVIRTUAL_CALL(_string_get_word_breaks, p_string, p_language, p_chars_per_line, ret);
 	return ret;
+}
+
+PackedInt32Array TextServerExtension::string_get_character_breaks(const String &p_string, const String &p_language) const {
+	PackedInt32Array ret;
+	if (GDVIRTUAL_CALL(_string_get_character_breaks, p_string, p_language, ret)) {
+		return ret;
+	}
+	return TextServer::string_get_character_breaks(p_string, p_language);
 }
 
 int64_t TextServerExtension::is_confusable(const String &p_string, const PackedStringArray &p_dict) const {

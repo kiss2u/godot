@@ -31,8 +31,8 @@
 #ifndef NODE_3D_EDITOR_GIZMOS_H
 #define NODE_3D_EDITOR_GIZMOS_H
 
+#include "core/math/dynamic_bvh.h"
 #include "core/templates/hash_map.h"
-#include "core/templates/local_vector.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/node_3d.h"
 #include "scene/3d/skeleton_3d.h"
@@ -72,7 +72,11 @@ class EditorNode3DGizmo : public Node3DGizmo {
 	Vector<Instance> instances;
 	Node3D *spatial_node = nullptr;
 
+	DynamicBVH::ID bvh_node_id;
+
 	void _set_node_3d(Node *p_node) { set_node_3d(Object::cast_to<Node3D>(p_node)); }
+
+	void _update_bvh();
 
 protected:
 	static void _bind_methods();
@@ -83,6 +87,7 @@ protected:
 	GDVIRTUAL2RC(String, _get_handle_name, int, bool)
 	GDVIRTUAL2RC(bool, _is_handle_highlighted, int, bool)
 	GDVIRTUAL2RC(Variant, _get_handle_value, int, bool)
+	GDVIRTUAL2(_begin_handle_action, int, bool)
 	GDVIRTUAL4(_set_handle, int, bool, const Camera3D *, Vector2)
 	GDVIRTUAL4(_commit_handle, int, bool, Variant, bool)
 
@@ -104,6 +109,7 @@ public:
 	virtual bool is_handle_highlighted(int p_id, bool p_secondary) const;
 	virtual String get_handle_name(int p_id, bool p_secondary) const;
 	virtual Variant get_handle_value(int p_id, bool p_secondary) const;
+	virtual void begin_handle_action(int p_id, bool p_secondary);
 	virtual void set_handle(int p_id, bool p_secondary, Camera3D *p_camera, const Point2 &p_point);
 	virtual void commit_handle(int p_id, bool p_secondary, const Variant &p_restore, bool p_cancel = false);
 
@@ -150,7 +156,7 @@ public:
 
 protected:
 	int current_state;
-	List<EditorNode3DGizmo *> current_gizmos;
+	HashSet<EditorNode3DGizmo *> current_gizmos;
 	HashMap<String, Vector<Ref<StandardMaterial3D>>> materials;
 
 	static void _bind_methods();
@@ -170,6 +176,7 @@ protected:
 	GDVIRTUAL3RC(bool, _is_handle_highlighted, Ref<EditorNode3DGizmo>, int, bool)
 	GDVIRTUAL3RC(Variant, _get_handle_value, Ref<EditorNode3DGizmo>, int, bool)
 
+	GDVIRTUAL3(_begin_handle_action, Ref<EditorNode3DGizmo>, int, bool)
 	GDVIRTUAL5(_set_handle, Ref<EditorNode3DGizmo>, int, bool, const Camera3D *, Vector2)
 	GDVIRTUAL5(_commit_handle, Ref<EditorNode3DGizmo>, int, bool, Variant, bool)
 
@@ -196,6 +203,7 @@ public:
 	virtual bool is_handle_highlighted(const EditorNode3DGizmo *p_gizmo, int p_id, bool p_secondary) const;
 	virtual String get_handle_name(const EditorNode3DGizmo *p_gizmo, int p_id, bool p_secondary) const;
 	virtual Variant get_handle_value(const EditorNode3DGizmo *p_gizmo, int p_id, bool p_secondary) const;
+	virtual void begin_handle_action(const EditorNode3DGizmo *p_gizmo, int p_id, bool p_secondary);
 	virtual void set_handle(const EditorNode3DGizmo *p_gizmo, int p_id, bool p_secondary, Camera3D *p_camera, const Point2 &p_point);
 	virtual void commit_handle(const EditorNode3DGizmo *p_gizmo, int p_id, bool p_secondary, const Variant &p_restore, bool p_cancel = false);
 

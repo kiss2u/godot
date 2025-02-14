@@ -35,7 +35,6 @@
 
 #include "core/extension/ext_wrappers.gen.inc"
 #include "core/object/gdvirtual.gen.inc"
-#include "core/object/script_language.h"
 #include "core/variant/native_ptr.h"
 
 class StreamPeer : public RefCounted {
@@ -74,6 +73,7 @@ public:
 	void put_u32(uint32_t p_val);
 	void put_64(int64_t p_val);
 	void put_u64(uint64_t p_val);
+	void put_half(float p_val);
 	void put_float(float p_val);
 	void put_double(double p_val);
 	void put_string(const String &p_string);
@@ -88,6 +88,7 @@ public:
 	int32_t get_32();
 	uint64_t get_u64();
 	int64_t get_64();
+	float get_half();
 	float get_float();
 	double get_double();
 	String get_string(int p_bytes = -1);

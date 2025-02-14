@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="RDShaderSource" inherits="RefCounted" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="RDShaderSource" inherits="RefCounted" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Shader source code (used by [RenderingDevice]).
 	</brief_description>
@@ -23,6 +23,7 @@
 			<param index="1" name="source" type="String" />
 			<description>
 				Sets [param source] code for the specified shader [param stage]. Equivalent to setting one of [member source_compute], [member source_fragment], [member source_tesselation_control], [member source_tesselation_evaluation] or [member source_vertex].
+				[b]Note:[/b] If you set the compute shader source code using this method directly, remember to remove the Godot-specific hint [code]#[compute][/code].
 			</description>
 		</method>
 	</methods>
